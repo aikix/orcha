@@ -1,0 +1,136 @@
+version: 1
+
+workspace:
+  name: "test-team"
+
+github:
+  host: "github.com"
+  org: "test-org"
+
+services:
+  redis:
+    id: redis
+    label: "Redis"
+    kind: infra
+    ownerServiceId: api-service
+    repoPath: "${workspace.root}/api-service"
+    workingDirectory: "${workspace.root}/api-service"
+    runtime:
+      type: compose
+      composeFile: "./compose/redis.yml"
+      projectName: "orcha-redis"
+      services: [redis]
+    localUrl: "redis://localhost:6379"
+    healthChecks:
+      - name: tcp
+        url: "tcp://localhost:6379"
+    dependencies: []
+    runtimeModes: [local]
+    env: {}
+    nodeConfig: {}
+    verification:
+      api: []
+      data: []
+
+  api-service:
+    id: api-service
+    label: "API Service"
+    kind: service
+    repoPath: "${workspace.root}/api-service"
+    workingDirectory: "${workspace.root}/api-service"
+    runtime:
+      type: script
+      command: { bin: npm, args: [run, dev] }
+    localUrl: "http://localhost:3000"
+    healthChecks:
+      - name: health
+        url: "http://localhost:3000/health"
+        expectedStatus: 200
+    dependencies: [redis]
+    runtimeModes: [local, remote]
+    env:
+      PORT: "3000"
+      NODE_CONFIG: '{"http":{"port":3000},"cache":{"enabled":true}}'
+    nodeConfig:
+      http: { port: 3000 }
+      cache: { enabled: true }
+    profiles:
+      staging:
+        description: "Against staging backend"
+        env:
+          NODE_CONFIG: '{"api":{"url":"https://staging.example.com"}}'
+        nodeConfig:
+          api: { url: "https://staging.example.com" }
+    verification:
+      api:
+        - id: health
+          label: "Health check"
+          kind: api
+          method: GET
+          url: "http://localhost:3000/health"
+          expectedStatus: 200
+      data: []
+
+  web-ui:
+    id: web-ui
+    label: "Web UI"
+    kind: service
+    repoPath: "${workspace.root}/web-ui"
+    workingDirectory: "${workspace.root}/web-ui"
+    runtime:
+      type: script
+      command: { bin: npm, args: [run, dev] }
+    localUrl: "http://localhost:5173"
+    healthChecks:
+      - name: health
+        url: "http://localhost:5173"
+        expectedStatus: 200
+    dependencies: [api-service]
+    runtimeModes: [local]
+    env:
+      PORT: "5173"
+    nodeConfig: {}
+    verification:
+      api: []
+      data: []
+
+aliases:
+  cache: redis
+
+presets:
+  core:
+    description: "Core stack"
+    services: [web-ui]
+  api-only:
+    description: "API without UI"
+    services: [api-service]
+
+fixtures:
+  - id: seed-user
+    label: "Seed test user"
+    targetService: api-service
+    method: POST
+    url: "http://localhost:3000/api/users"
+    body: { name: "test", email: "test@example.com" }
+    expectedStatus: 201
+
+flows:
+  - id: user-flow
+    label: "User creation flow"
+    description: "Create and verify a user"
+    requiredServices: [api-service]
+    steps:
+      - id: create-user
+        label: "Create user"
+        method: POST
+        url: "http://localhost:3000/api/users"
+        body: { name: "test", email: "test@example.com" }
+        expectedStatus: 201
+
+defaults:
+  upTarget: "core"
+  verifyApiService: "api-service"
+
+onboard:
+  binaries: [bun, docker]
+  skills: [orcha-check, orcha-sync]

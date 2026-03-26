@@ -1,0 +1,11 @@
+{
+  "name": "@orcha/service-definitions",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "build": "bun run typecheck",
+    "typecheck": "tsc --project tsconfig.json",
+    "test": "bun test src/"
+  }
+}
