@@ -169,4 +169,7 @@ export type OrchaConfig = {
     readonly binaries?: readonly string[];
     readonly skills?: readonly string[];
   };
+  readonly knowledge?: {
+    readonly directory?: string; // default: ${workspace.root}/knowledge
+  };
 };

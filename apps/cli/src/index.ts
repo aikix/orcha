@@ -28,6 +28,7 @@ import {
   listPresets,
   getDefaults,
   loadConfig,
+  getWorkspaceRoot,
   canonicalizeServiceId,
   listFixtures,
   getFixture,
@@ -72,6 +73,10 @@ Workspace:
   verify stack                     Probe all service health checks
   verify api [service]             Run API verification probes from config
   seed [fixture...]                Execute seed fixtures from config
+
+Knowledge:
+  kb list [service]                List KB documents
+  kb status                        KB freshness per service
 
 Code Intelligence:
   pr list [--since <window>]       List PRs across repos (default: 2w)
@@ -628,6 +633,100 @@ const runPrList = async (since: string, jsonOutput: boolean) => {
     for (const pr of allPrs) {
       const title = pr.title.length > 40 ? pr.title.slice(0, 39) + '…' : pr.title;
       console.log(`  ${pr.repo.padEnd(24)} ${String(pr.number).padEnd(5)} ${title.padEnd(42)} ${pr.author.padEnd(18)} ${pr.state.padEnd(8)} ${pr.reviewDecision.padEnd(18)} ${pr.createdAt}`);
+    }
+  }
+};
+
+// ---------------------------------------------------------------------------
+// kb: Knowledge base management
+// ---------------------------------------------------------------------------
+const getKbDir = (): string => {
+  const config = loadConfig();
+  const kbDir = (config.knowledge as any)?.directory ?? path.join(getWorkspaceRoot(), 'knowledge');
+  if (!existsSync(kbDir)) mkdirSync(kbDir, { recursive: true });
+  return kbDir;
+};
+
+const runKbList = (serviceId: string | undefined, jsonOutput: boolean) => {
+  const kbDir = getKbDir();
+  const entries: Array<{ service: string; file: string; path: string; modified: string }> = [];
+
+  // List service subdirectories or specific service
+  const subdirs = serviceId ? [serviceId] : (() => {
+    try {
+      return readdirSync(kbDir, { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => d.name);
+    } catch { return []; }
+  })();
+
+  for (const dir of subdirs) {
+    const svcKbDir = path.join(kbDir, dir);
+    if (!existsSync(svcKbDir)) continue;
+    try {
+      const files = readdirSync(svcKbDir).filter((f) => f.endsWith('.md'));
+      for (const file of files) {
+        const filePath = path.join(svcKbDir, file);
+        const { mtimeMs } = require('node:fs').statSync(filePath);
+        entries.push({
+          service: dir,
+          file,
+          path: filePath,
+          modified: new Date(mtimeMs).toISOString().slice(0, 10),
+        });
+      }
+    } catch { /* skip unreadable dirs */ }
+  }
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({ kbDir, documents: entries }, null, 2));
+  } else {
+    if (entries.length === 0) {
+      console.log(`\nNo KB documents found in ${kbDir}`);
+      console.log('Use /orcha-kb-update <service> to generate KB docs from recent PRs.');
+      return;
+    }
+    console.log(`\nKB Documents (${entries.length}) — ${kbDir}\n`);
+    console.log(`  ${'SERVICE'.padEnd(28)} ${'FILE'.padEnd(35)} MODIFIED`);
+    console.log(`  ${''.padEnd(28, '-')} ${''.padEnd(35, '-')} ${''.padEnd(10, '-')}`);
+    for (const e of entries) {
+      console.log(`  ${e.service.padEnd(28)} ${e.file.padEnd(35)} ${e.modified}`);
+    }
+  }
+};
+
+const runKbStatus = (jsonOutput: boolean) => {
+  // Show KB freshness: which services have KB docs, which merged PRs are not yet covered
+  const kbDir = getKbDir();
+  const services = listServiceDefinitions();
+
+  type KbServiceStatus = { service: string; docCount: number; lastUpdated: string | null };
+  const statuses: KbServiceStatus[] = [];
+
+  for (const svc of services) {
+    const svcKbDir = path.join(kbDir, svc.id);
+    if (!existsSync(svcKbDir)) {
+      statuses.push({ service: svc.id, docCount: 0, lastUpdated: null });
+      continue;
+    }
+    const files = readdirSync(svcKbDir).filter((f) => f.endsWith('.md'));
+    let lastUpdated: string | null = null;
+    for (const file of files) {
+      const { mtimeMs } = require('node:fs').statSync(path.join(svcKbDir, file));
+      const date = new Date(mtimeMs).toISOString().slice(0, 10);
+      if (!lastUpdated || date > lastUpdated) lastUpdated = date;
+    }
+    statuses.push({ service: svc.id, docCount: files.length, lastUpdated });
+  }
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({ kbDir, services: statuses }, null, 2));
+  } else {
+    console.log(`\nKB Status — ${kbDir}\n`);
+    console.log(`  ${'SERVICE'.padEnd(28)} ${'DOCS'.padEnd(6)} LAST UPDATED`);
+    console.log(`  ${''.padEnd(28, '-')} ${''.padEnd(6, '-')} ${''.padEnd(12, '-')}`);
+    for (const s of statuses) {
+      console.log(`  ${s.service.padEnd(28)} ${String(s.docCount).padEnd(6)} ${s.lastUpdated ?? 'never'}`);
     }
   }
 };
@@ -1286,6 +1385,21 @@ const main = async () => {
       const profileIdx = args.indexOf('--profile');
       const profile = profileIdx >= 0 ? args[profileIdx + 1] : undefined;
       runGraph(target, profile, jsonOutput);
+      break;
+    }
+
+    case 'kb': {
+      const sub = positional[1];
+      if (sub === 'list') {
+        const svcId = positional[2];
+        runKbList(svcId, jsonOutput);
+      } else if (sub === 'status') {
+        runKbStatus(jsonOutput);
+      } else {
+        console.error('Usage: orcha kb <list [service]|status>');
+        console.error('Use /orcha-kb-update <service> for agent-powered KB generation.');
+        process.exit(1);
+      }
       break;
     }
 
