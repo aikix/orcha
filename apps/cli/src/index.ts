@@ -32,9 +32,12 @@ import {
   canonicalizeServiceId,
   listFixtures,
   getFixture,
+  listFlowScenarios,
+  getFlowScenario,
   type ServiceDefinition,
   type SeedFixture,
   type VerificationProbe,
+  type FlowStep,
 } from '@orcha/config-loader';
 import {
   startStack,
@@ -72,6 +75,7 @@ Workspace:
   inspect config <service>         Show resolved service configuration
   verify stack                     Probe all service health checks
   verify api [service]             Run API verification probes from config
+  verify flow [scenario]           Run multi-step flow scenarios from config
   seed [fixture...]                Execute seed fixtures from config
 
 Knowledge:
@@ -897,6 +901,83 @@ const runVerifyApi = async (serviceId: string | undefined, jsonOutput: boolean) 
 };
 
 // ---------------------------------------------------------------------------
+// verify flow: Execute multi-step flow scenarios from config
+// ---------------------------------------------------------------------------
+const runVerifyFlow = async (scenarioId: string | undefined, jsonOutput: boolean) => {
+  const scenarios = listFlowScenarios();
+  if (scenarios.length === 0) {
+    if (jsonOutput) console.log(JSON.stringify({ error: 'No flow scenarios defined in orcha.config.yaml' }));
+    else console.error('No flow scenarios defined in orcha.config.yaml');
+    return;
+  }
+
+  const toRun = scenarioId
+    ? [getFlowScenario(scenarioId)].filter(Boolean)
+    : [...scenarios];
+
+  if (toRun.length === 0) {
+    console.error(`Unknown flow scenario: ${scenarioId}`);
+    process.exit(1);
+  }
+
+  type StepResult = { id: string; label: string; status: number; expected: number; ok: boolean; captured?: unknown; error?: string };
+  type FlowResult = { id: string; label: string; passed: number; total: number; steps: StepResult[] };
+  const results: FlowResult[] = [];
+
+  for (const scenario of toRun) {
+    if (!scenario) continue;
+    if (!jsonOutput) console.log(`\n  Flow: ${scenario.label}\n`);
+
+    const captures: Record<string, unknown> = {};
+    const steps: StepResult[] = [];
+
+    for (const step of scenario.steps) {
+      // Delay if specified
+      if (step.delayBeforeMs) {
+        await new Promise((r) => setTimeout(r, step.delayBeforeMs));
+      }
+
+      if (!jsonOutput) process.stdout.write(`    [${step.id}] ${step.label}...`);
+
+      const result = await executeHttpRequest(step.method, step.url, step.body, step.headers);
+      const ok = result.status === step.expectedStatus;
+
+      // Capture response if requested
+      if (ok && step.captureAs && result.body) {
+        captures[step.captureAs] = result.body;
+      }
+
+      steps.push({
+        id: step.id,
+        label: step.label,
+        status: result.status,
+        expected: step.expectedStatus,
+        ok,
+        captured: step.captureAs ? result.body : undefined,
+        error: ok ? undefined : `expected ${step.expectedStatus}, got ${result.status}`,
+      });
+
+      if (!jsonOutput) console.log(ok ? ` OK (${result.status})` : ` FAIL (${result.status})`);
+
+      // Stop flow on first failure
+      if (!ok) break;
+    }
+
+    const passed = steps.filter((s) => s.ok).length;
+    results.push({ id: scenario.id, label: scenario.label, passed, total: scenario.steps.length, steps });
+  }
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({ scenarios: results }, null, 2));
+  } else {
+    for (const r of results) {
+      const status = r.passed === r.total ? 'PASS' : 'FAIL';
+      console.log(`\n  ${r.label}: ${status} (${r.passed}/${r.total} steps)`);
+    }
+  }
+};
+
+// ---------------------------------------------------------------------------
 // up: Start services with dependency resolution
 // ---------------------------------------------------------------------------
 const runUp = async (target: string, profile: string | undefined, jsonOutput: boolean) => {
@@ -1465,10 +1546,13 @@ const main = async () => {
       if (sub === 'stack') {
         await runVerifyStack(jsonOutput);
       } else if (sub === 'api') {
-        const svcId = positional[2]; // optional — if omitted, all services
+        const svcId = positional[2];
         await runVerifyApi(svcId, jsonOutput);
+      } else if (sub === 'flow') {
+        const scenId = positional[2];
+        await runVerifyFlow(scenId, jsonOutput);
       } else {
-        console.error('Usage: orcha verify <stack|api [service]>');
+        console.error('Usage: orcha verify <stack|api [service]|flow [scenario]>');
         process.exit(1);
       }
       break;
