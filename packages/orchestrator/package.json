@@ -1,0 +1,15 @@
+{
+  "name": "@orcha/orchestrator",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "build": "bun run typecheck",
+    "typecheck": "tsc --project tsconfig.json",
+    "test": "bun test src/"
+  },
+  "dependencies": {
+    "@orcha/config-loader": "workspace:*",
+    "@orcha/service-definitions": "workspace:*"
+  }
+}

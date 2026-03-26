@@ -4,6 +4,7 @@
   "type": "module",
   "dependencies": {
     "@orcha/discovery": "workspace:*",
-    "@orcha/config-loader": "workspace:*"
+    "@orcha/config-loader": "workspace:*",
+    "@orcha/orchestrator": "workspace:*"
   }
 }
