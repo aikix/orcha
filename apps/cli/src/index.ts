@@ -19,33 +19,47 @@ import {
   writeConfig,
   type RepoInfo,
 } from '@orcha/discovery';
+import {
+  getServiceDefinition,
+  resolveServiceDefinition,
+  listAllServiceDefinitions,
+  listServiceDefinitions,
+  getPreset,
+  listPresets,
+  getDefaults,
+  loadConfig,
+  canonicalizeServiceId,
+  type ServiceDefinition,
+} from '@orcha/config-loader';
 
 const execFileAsync = promisify(execFile);
 
 const printHelp = () => {
   console.log(`Usage:
-  orcha init <org-url> [workspace-dir]   Agent-powered workspace setup
+  orcha [command]
 
-  If workspace-dir is omitted, creates ./<org-name>/ in the current directory.
-  Diffs remote repos against local workspace to show what's missing, extra, or present.
-
-Examples:
-  orcha init https://github.com/my-org                    # creates ./my-org/
-  orcha init https://github.com/my-org ~/Workspace/myteam # uses existing folder
-  orcha init https://git.soma.salesforce.com/trust-status ~/Workspace/Trust
-
-Other Commands:
+Setup:
+  init <org-url> [workspace-dir]   Diff remote org vs local workspace
   list-repos <org-url>             List repos in a GitHub org
   scan <org-url> [--all]           Shallow clone + analyze repos
   clone <org-url> [repos...]       Clone repos into workspace
+  generate-config <org-url>        Regex-based config fallback
+
+Workspace:
+  list services                    List all registered services
+  list presets                     List stack presets
+  graph [preset|service]           Show dependency graph
 
 Flags:
+  --profile <name>                 Profile for graph/up/inspect
   --all                            Include all repos (skip selection)
   --json                           Machine-readable JSON output
   --help, -h                       Show this help
 
-Agent Skills:
-  /orcha-init <org-url> [dir]      Full agent-powered init (recommended)`);
+Examples:
+  orcha init https://github.com/my-org ~/Workspace/myteam
+  orcha graph mytrust-core --profile staging
+  orcha list services --json`);
 };
 
 // ---------------------------------------------------------------------------
@@ -290,6 +304,105 @@ const runScan = async (orgUrlString: string, includeAll: boolean, jsonOutput: bo
 };
 
 // ---------------------------------------------------------------------------
+// graph: Show dependency graph for a preset or service
+// ---------------------------------------------------------------------------
+const collectDependencies = (serviceId: string, profile: string | undefined, visited: Set<string>): void => {
+  if (visited.has(serviceId)) return;
+  visited.add(serviceId);
+
+  const resolved = resolveServiceDefinition(serviceId, profile);
+  for (const dep of resolved.dependencies) {
+    collectDependencies(dep, undefined, visited); // deps use their own default profile
+  }
+};
+
+const runGraph = (target: string, profile: string | undefined, jsonOutput: boolean) => {
+  // Determine if target is a preset or service
+  const preset = getPreset(target);
+  const topLevelServices = preset ? preset.services : [target];
+
+  // Collect all dependencies recursively
+  const allServiceIds = new Set<string>();
+  for (const svcId of topLevelServices) {
+    collectDependencies(svcId, profile, allServiceIds);
+  }
+
+  // Build graph entries
+  type GraphNode = { id: string; label: string; kind: string; dependencies: string[]; referenceDeps: string[] };
+  const nodes: GraphNode[] = [];
+
+  for (const id of allServiceIds) {
+    const resolved = resolveServiceDefinition(id, topLevelServices.includes(id) ? profile : undefined);
+    nodes.push({
+      id: resolved.id,
+      label: resolved.label,
+      kind: resolved.kind,
+      dependencies: [...resolved.dependencies],
+      referenceDeps: [...(resolved.referenceDeps ?? [])],
+    });
+  }
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({
+      target,
+      profile: profile ?? 'default',
+      preset: preset ? { id: preset.id, description: preset.description } : null,
+      nodes,
+    }, null, 2));
+  } else {
+    const presetLabel = preset ? ` (preset: ${preset.description})` : '';
+    const profileLabel = profile ? ` --profile ${profile}` : '';
+    console.log(`\nDependency Graph: ${target}${profileLabel}${presetLabel}`);
+    console.log(`Nodes: ${nodes.length}\n`);
+
+    // Table
+    const nameWidth = Math.max(28, ...nodes.map((n) => n.id.length + 2));
+    console.log(`  ${'SERVICE'.padEnd(nameWidth)} DEPENDENCIES`);
+    console.log(`  ${''.padEnd(nameWidth, '-')} ${''.padEnd(50, '-')}`);
+
+    for (const node of nodes) {
+      const deps = node.dependencies.length > 0 ? node.dependencies.join(', ') : 'none';
+      const refs = node.referenceDeps.length > 0 ? ` + ${node.referenceDeps.map((r) => `${r} (ref)`).join(', ')}` : '';
+      console.log(`  ${node.id.padEnd(nameWidth)} ${deps}${refs}`);
+    }
+  }
+};
+
+// ---------------------------------------------------------------------------
+// list: List services or presets
+// ---------------------------------------------------------------------------
+const runList = (subcommand: string, jsonOutput: boolean) => {
+  if (subcommand === 'services') {
+    const services = listAllServiceDefinitions();
+    if (jsonOutput) {
+      console.log(JSON.stringify(services.map((s) => ({
+        id: s.id, label: s.label, kind: s.kind, localUrl: s.localUrl,
+      })), null, 2));
+    } else {
+      console.log(`\n  ${'SERVICE'.padEnd(30)} ${'KIND'.padEnd(10)} URL`);
+      console.log(`  ${''.padEnd(30, '-')} ${''.padEnd(10, '-')} ${''.padEnd(30, '-')}`);
+      for (const s of services) {
+        console.log(`  ${s.id.padEnd(30)} ${s.kind.padEnd(10)} ${s.localUrl}`);
+      }
+    }
+  } else if (subcommand === 'presets') {
+    const presets = listPresets();
+    if (jsonOutput) {
+      console.log(JSON.stringify(presets, null, 2));
+    } else {
+      console.log(`\n  ${'PRESET'.padEnd(20)} ${'SERVICES'.padEnd(30)} DESCRIPTION`);
+      console.log(`  ${''.padEnd(20, '-')} ${''.padEnd(30, '-')} ${''.padEnd(30, '-')}`);
+      for (const p of presets) {
+        console.log(`  ${p.id.padEnd(20)} ${p.services.join(', ').padEnd(30)} ${p.description}`);
+      }
+    }
+  } else {
+    console.error(`Unknown list target: ${subcommand}. Use: services, presets`);
+    process.exit(1);
+  }
+};
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 const main = async () => {
@@ -308,9 +421,9 @@ const main = async () => {
   const positional: string[] = [];
   for (let i = 0; i < args.length; i++) {
     if (args[i].startsWith('--')) {
-      if (args[i] === '--workspace' || args[i] === '--json' || args[i] === '--all' || args[i] === '--help') {
-        // --workspace takes a value, skip next arg too
-        if (args[i] === '--workspace') i++;
+      if (['--workspace', '--json', '--all', '--help', '--profile'].includes(args[i])) {
+        // flags that take a value — skip next arg too
+        if (args[i] === '--workspace' || args[i] === '--profile') i++;
       }
       continue;
     }
@@ -364,6 +477,21 @@ const main = async () => {
       const result = await discover(orgUrl, repos, parseOrgUrl(orgUrl).org);
       const outputPath = writeConfig(result.configYaml, process.cwd());
       console.log(`Config written to: ${outputPath}`);
+      break;
+    }
+
+    case 'graph': {
+      const target = positional[1] ?? getDefaults().upTarget ?? 'all';
+      const profileIdx = args.indexOf('--profile');
+      const profile = profileIdx >= 0 ? args[profileIdx + 1] : undefined;
+      runGraph(target, profile, jsonOutput);
+      break;
+    }
+
+    case 'list': {
+      const subcommand = positional[1];
+      if (!subcommand) { console.error('Usage: orcha list <services|presets>'); process.exit(1); }
+      runList(subcommand, jsonOutput);
       break;
     }
 
