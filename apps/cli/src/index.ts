@@ -53,6 +53,7 @@ Workspace:
   inspect config <service>         Show resolved service configuration
   verify stack                     Probe all service health checks
   pr list [--since <window>]       List PRs across repos (default: 2w)
+  delta scan [--since <window>]    Scan git commits across repos (default: 1w)
 
 Flags:
   --profile <name>                 Profile for graph/up/inspect
@@ -609,6 +610,88 @@ const runPrList = async (since: string, jsonOutput: boolean) => {
 };
 
 // ---------------------------------------------------------------------------
+// delta scan: Scan git commits across repos
+// ---------------------------------------------------------------------------
+type CommitEntry = { hash: string; subject: string; author: string; date: string };
+type RepoCommits = { repo: string; commits: CommitEntry[]; insertions: number; deletions: number };
+
+const runDeltaScan = async (since: string, jsonOutput: boolean) => {
+  const services = listServiceDefinitions(true);
+
+  // Build --since arg for git log
+  const sinceArg = since.replace(/(\d+)d/, '$1 days ago')
+    .replace(/(\d+)w/, '$1 weeks ago')
+    .replace(/(\d+)m/, '$1 months ago');
+
+  // Deduplicate repos
+  const seen = new Set<string>();
+  const repos: Array<{ name: string; repoPath: string }> = [];
+  for (const svc of services) {
+    const repoName = svc.repoPath.split('/').pop() ?? svc.id;
+    if (seen.has(repoName) || svc.kind === 'infra') continue;
+    seen.add(repoName);
+    if (existsSync(svc.repoPath)) {
+      repos.push({ name: repoName, repoPath: svc.repoPath });
+    }
+  }
+
+  const results: RepoCommits[] = [];
+
+  await Promise.all(repos.map(async (repo) => {
+    try {
+      // Get commits
+      const { stdout } = await execFileAsync('git', [
+        'log', `--since=${sinceArg}`, '--format=%H|%s|%an|%aI', '--no-merges',
+      ], { cwd: repo.repoPath, timeout: 10_000 });
+
+      const commits: CommitEntry[] = stdout.trim().split('\n').filter(Boolean).map((line) => {
+        const [hash, subject, author, date] = line.split('|');
+        return { hash, subject, author, date: date?.slice(0, 10) ?? '' };
+      });
+
+      // Get stat summary
+      let insertions = 0, deletions = 0;
+      if (commits.length > 0) {
+        try {
+          const { stdout: statOut } = await execFileAsync('git', [
+            'log', `--since=${sinceArg}`, '--no-merges', '--shortstat', '--format=',
+          ], { cwd: repo.repoPath, timeout: 10_000 });
+          for (const line of statOut.split('\n')) {
+            const insMatch = line.match(/(\d+) insertion/);
+            const delMatch = line.match(/(\d+) deletion/);
+            if (insMatch) insertions += parseInt(insMatch[1], 10);
+            if (delMatch) deletions += parseInt(delMatch[1], 10);
+          }
+        } catch { /* ignore stat errors */ }
+      }
+
+      results.push({ repo: repo.name, commits, insertions, deletions });
+    } catch {
+      results.push({ repo: repo.name, commits: [], insertions: 0, deletions: 0 });
+    }
+  }));
+
+  // Sort by commit count descending
+  results.sort((a, b) => b.commits.length - a.commits.length);
+  const totalCommits = results.reduce((sum, r) => sum + r.commits.length, 0);
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({ since, reposScanned: repos.length, totalCommits, repos: results }, null, 2));
+  } else {
+    console.log(`\nDelta Scan (since ${since}) — ${totalCommits} commits across ${repos.length} repos\n`);
+    console.log(`  ${'REPO'.padEnd(28)} ${'COMMITS'.padEnd(9)} ${'LINES'.padEnd(14)} LATEST`);
+    console.log(`  ${''.padEnd(28, '-')} ${''.padEnd(9, '-')} ${''.padEnd(14, '-')} ${''.padEnd(40, '-')}`);
+    for (const r of results) {
+      const latest = r.commits.length > 0
+        ? `${r.commits[0].subject.slice(0, 38)} (${r.commits[0].author})`
+        : 'none';
+      const lines = r.commits.length > 0 ? `+${r.insertions}/-${r.deletions}` : '';
+      console.log(`  ${r.repo.padEnd(28)} ${String(r.commits.length).padEnd(9)} ${lines.padEnd(14)} ${latest}`);
+    }
+  }
+};
+
+// ---------------------------------------------------------------------------
 // verify stack: Probe all service health checks
 // ---------------------------------------------------------------------------
 const runVerifyStack = async (jsonOutput: boolean) => {
@@ -810,6 +893,19 @@ const main = async () => {
       const profileIdx = args.indexOf('--profile');
       const profile = profileIdx >= 0 ? args[profileIdx + 1] : undefined;
       runGraph(target, profile, jsonOutput);
+      break;
+    }
+
+    case 'delta': {
+      const sub = positional[1];
+      if (sub === 'scan') {
+        const sinceIdx = args.indexOf('--since');
+        const since = sinceIdx >= 0 ? args[sinceIdx + 1] : '1w';
+        await runDeltaScan(since, jsonOutput);
+      } else {
+        console.error('Usage: orcha delta scan [--since <window>]');
+        process.exit(1);
+      }
       break;
     }
 
