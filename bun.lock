@@ -1,0 +1,76 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "orcha",
+      "devDependencies": {
+        "@types/node": "^24.3.1",
+        "bun-types": "^1.3.2",
+        "turbo": "^2.5.6",
+        "typescript": "^5.9.2",
+      },
+    },
+    "apps/cli": {
+      "name": "@orcha/cli",
+      "version": "0.1.0",
+      "dependencies": {
+        "@orcha/config-loader": "workspace:*",
+        "@orcha/discovery": "workspace:*",
+      },
+    },
+    "packages/config-loader": {
+      "name": "@orcha/config-loader",
+      "version": "0.1.0",
+      "dependencies": {
+        "@orcha/service-definitions": "workspace:*",
+        "yaml": "^2.7.1",
+      },
+    },
+    "packages/discovery": {
+      "name": "@orcha/discovery",
+      "version": "0.1.0",
+      "dependencies": {
+        "@orcha/service-definitions": "workspace:*",
+        "yaml": "^2.7.1",
+      },
+    },
+    "packages/service-definitions": {
+      "name": "@orcha/service-definitions",
+      "version": "0.1.0",
+    },
+  },
+  "packages": {
+    "@orcha/cli": ["@orcha/cli@workspace:apps/cli"],
+
+    "@orcha/config-loader": ["@orcha/config-loader@workspace:packages/config-loader"],
+
+    "@orcha/discovery": ["@orcha/discovery@workspace:packages/discovery"],
+
+    "@orcha/service-definitions": ["@orcha/service-definitions@workspace:packages/service-definitions"],
+
+    "@turbo/darwin-64": ["@turbo/darwin-64@2.8.20", "https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/@turbo/darwin-64/-/darwin-64-2.8.20.tgz", { "os": "darwin", "cpu": "x64" }, "sha512-FQ9EX1xMU5nbwjxXxM3yU88AQQ6Sqc6S44exPRroMcx9XZHqqppl5ymJF0Ig/z3nvQNwDmz1Gsnvxubo+nXWjQ=="],
+
+    "@turbo/darwin-arm64": ["@turbo/darwin-arm64@2.8.20", "https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/@turbo/darwin-arm64/-/darwin-arm64-2.8.20.tgz", { "os": "darwin", "cpu": "arm64" }, "sha512-Gpyh9ATFGThD6/s9L95YWY54cizg/VRWl2B67h0yofG8BpHf67DFAh9nuJVKG7bY0+SBJDAo5cMur+wOl9YOYw=="],
+
+    "@turbo/linux-64": ["@turbo/linux-64@2.8.20", "https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/@turbo/linux-64/-/linux-64-2.8.20.tgz", { "os": "linux", "cpu": "x64" }, "sha512-p2QxWUYyYUgUFG0b0kR+pPi8t7c9uaVlRtjTTI1AbCvVqkpjUfCcReBn6DgG/Hu8xrWdKLuyQFaLYFzQskZbcA=="],
+
+    "@turbo/linux-arm64": ["@turbo/linux-arm64@2.8.20", "https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/@turbo/linux-arm64/-/linux-arm64-2.8.20.tgz", { "os": "linux", "cpu": "arm64" }, "sha512-Gn5yjlZGLRZWarLWqdQzv0wMqyBNIdq1QLi48F1oY5Lo9kiohuf7BPQWtWxeNVS2NgJ1+nb/DzK1JduYC4AWOA=="],
+
+    "@turbo/windows-64": ["@turbo/windows-64@2.8.20", "https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/@turbo/windows-64/-/windows-64-2.8.20.tgz", { "os": "win32", "cpu": "x64" }, "sha512-vyaDpYk/8T6Qz5V/X+ihKvKFEZFUoC0oxYpC1sZanK6gaESJlmV3cMRT3Qhcg4D2VxvtC2Jjs9IRkrZGL+exLw=="],
+
+    "@turbo/windows-arm64": ["@turbo/windows-arm64@2.8.20", "https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/@turbo/windows-arm64/-/windows-arm64-2.8.20.tgz", { "os": "win32", "cpu": "arm64" }, "sha512-voicVULvUV5yaGXo0Iue13BcHGYW3u0VgqSbfQwBaHbpj1zLjYV4KIe+7fYIo6DO8FVUJzxFps3ODCQG/Wy2Qw=="],
+
+    "@types/node": ["@types/node@24.12.0", "https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/@types/node/-/node-24.12.0.tgz", { "dependencies": { "undici-types": "~7.16.0" } }, "sha512-GYDxsZi3ChgmckRT9HPU0WEhKLP08ev/Yfcq2AstjrDASOYCSXeyjDsHg4v5t4jOj7cyDX3vmprafKlWIG9MXQ=="],
+
+    "bun-types": ["bun-types@1.3.11", "https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/bun-types/-/bun-types-1.3.11.tgz", { "dependencies": { "@types/node": "*" } }, "sha512-1KGPpoxQWl9f6wcZh57LvrPIInQMn2TQ7jsgxqpRzg+l0QPOFvJVH7HmvHo/AiPgwXy+/Thf6Ov3EdVn1vOabg=="],
+
+    "turbo": ["turbo@2.8.20", "https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/turbo/-/turbo-2.8.20.tgz", { "optionalDependencies": { "@turbo/darwin-64": "2.8.20", "@turbo/darwin-arm64": "2.8.20", "@turbo/linux-64": "2.8.20", "@turbo/linux-arm64": "2.8.20", "@turbo/windows-64": "2.8.20", "@turbo/windows-arm64": "2.8.20" }, "bin": { "turbo": "bin/turbo" } }, "sha512-Rb4qk5YT8RUwwdXtkLpkVhNEe/lor6+WV7S5tTlLpxSz6MjV5Qi8jGNn4gS6NAvrYGA/rNrE6YUQM85sCZUDbQ=="],
+
+    "typescript": ["typescript@5.9.3", "https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/typescript/-/typescript-5.9.3.tgz", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
+
+    "undici-types": ["undici-types@7.16.0", "https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/undici-types/-/undici-types-7.16.0.tgz", {}, "sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw=="],
+
+    "yaml": ["yaml@2.8.3", "https://nexus-proxy.repo.local.sfdc.net/nexus/content/groups/npm-all/yaml/-/yaml-2.8.3.tgz", { "bin": { "yaml": "bin.mjs" } }, "sha512-AvbaCLOO2Otw/lW5bmh9d/WEdcDFdQp2Z2ZUH3pX9U2ihyUY0nvLv7J6TrWowklRGPYbB/IuIMfYgxaCPg5Bpg=="],
+  }
+}

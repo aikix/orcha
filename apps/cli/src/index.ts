@@ -1,0 +1,380 @@
+#!/usr/bin/env bun
+
+/**
+ * orcha CLI — agent-first multi-repo orchestration tool
+ *
+ * Design: CLI does plumbing (clone, scan, write files).
+ * Agent skills do the thinking (analyze, infer, configure).
+ * All commands support --json for structured agent consumption.
+ */
+
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { existsSync, mkdirSync, readdirSync } from 'node:fs';
+import path from 'node:path';
+import {
+  parseOrgUrl,
+  listOrgRepos,
+  discover,
+  writeConfig,
+  type RepoInfo,
+} from '@orcha/discovery';
+
+const execFileAsync = promisify(execFile);
+
+const printHelp = () => {
+  console.log(`Usage:
+  orcha init <org-url> [workspace-dir]   Agent-powered workspace setup
+
+  If workspace-dir is omitted, creates ./<org-name>/ in the current directory.
+  Diffs remote repos against local workspace to show what's missing, extra, or present.
+
+Examples:
+  orcha init https://github.com/my-org                    # creates ./my-org/
+  orcha init https://github.com/my-org ~/Workspace/myteam # uses existing folder
+  orcha init https://git.soma.salesforce.com/trust-status ~/Workspace/Trust
+
+Other Commands:
+  list-repos <org-url>             List repos in a GitHub org
+  scan <org-url> [--all]           Shallow clone + analyze repos
+  clone <org-url> [repos...]       Clone repos into workspace
+
+Flags:
+  --all                            Include all repos (skip selection)
+  --json                           Machine-readable JSON output
+  --help, -h                       Show this help
+
+Agent Skills:
+  /orcha-init <org-url> [dir]      Full agent-powered init (recommended)`);
+};
+
+// ---------------------------------------------------------------------------
+// init: Diff remote org against local workspace, then scan
+// ---------------------------------------------------------------------------
+const runInit = async (
+  orgUrlString: string,
+  workspaceDir: string,
+  jsonOutput: boolean,
+  includeAll: boolean,
+) => {
+  const orgUrl = parseOrgUrl(orgUrlString);
+
+  // Ensure workspace dir exists
+  if (!existsSync(workspaceDir)) {
+    mkdirSync(workspaceDir, { recursive: true });
+    if (!jsonOutput) console.log(`Created workspace: ${workspaceDir}`);
+  }
+
+  if (!jsonOutput) console.log(`\nScanning ${orgUrl.host}/${orgUrl.org}...`);
+
+  const remoteRepos = await listOrgRepos(orgUrl);
+
+  // Diff against local workspace
+  const localDirs = new Set(
+    readdirSync(workspaceDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && !d.name.startsWith('.'))
+      .map((d) => d.name),
+  );
+
+  const remoteNames = new Set(remoteRepos.map((r) => r.name));
+
+  type RepoDiffEntry = {
+    name: string;
+    status: 'present' | 'missing' | 'local-only';
+    repo?: RepoInfo;
+    localPath?: string;
+  };
+
+  const diff: RepoDiffEntry[] = [];
+
+  // Repos in remote org
+  for (const repo of remoteRepos) {
+    if (localDirs.has(repo.name)) {
+      diff.push({
+        name: repo.name,
+        status: 'present',
+        repo,
+        localPath: path.join(workspaceDir, repo.name),
+      });
+    } else {
+      diff.push({ name: repo.name, status: 'missing', repo });
+    }
+  }
+
+  // Dirs only local (not in remote org)
+  for (const dirName of localDirs) {
+    if (!remoteNames.has(dirName)) {
+      diff.push({
+        name: dirName,
+        status: 'local-only',
+        localPath: path.join(workspaceDir, dirName),
+      });
+    }
+  }
+
+  const present = diff.filter((d) => d.status === 'present');
+  const missing = diff.filter((d) => d.status === 'missing');
+  const localOnly = diff.filter((d) => d.status === 'local-only');
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({
+      orgUrl,
+      workspaceDir,
+      diff,
+      summary: {
+        remoteRepos: remoteRepos.length,
+        present: present.length,
+        missing: missing.length,
+        localOnly: localOnly.length,
+      },
+    }, null, 2));
+  } else {
+    console.log(`\nWorkspace: ${workspaceDir}`);
+    console.log(`Remote: ${remoteRepos.length} repos | Local: ${localDirs.size} dirs\n`);
+
+    if (present.length > 0) {
+      console.log(`  Present (${present.length}):`);
+      for (const d of present) {
+        const lang = d.repo?.language ?? '-';
+        console.log(`    ✓ ${d.name.padEnd(30)} ${lang}`);
+      }
+    }
+
+    if (missing.length > 0) {
+      console.log(`\n  Missing from workspace (${missing.length}):`);
+      for (const d of missing) {
+        const lang = d.repo?.language ?? '-';
+        const desc = d.repo?.description?.slice(0, 40) ?? '';
+        console.log(`    ✗ ${d.name.padEnd(30)} ${lang.padEnd(12)} ${desc}`);
+      }
+    }
+
+    if (localOnly.length > 0) {
+      console.log(`\n  Local only — not in org (${localOnly.length}):`);
+      for (const d of localOnly) {
+        console.log(`    ? ${d.name}`);
+      }
+    }
+
+    console.log(`\nUse /orcha-init in Claude Code for agent-powered setup.`);
+    console.log(`The agent will ask which missing repos to clone and generate orcha.config.yaml.`);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// list-repos
+// ---------------------------------------------------------------------------
+const runListRepos = async (orgUrlString: string, jsonOutput: boolean) => {
+  const orgUrl = parseOrgUrl(orgUrlString);
+  const repos = await listOrgRepos(orgUrl);
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({ orgUrl, repos }, null, 2));
+  } else {
+    console.log(`\n${orgUrl.host}/${orgUrl.org} — ${repos.length} repos\n`);
+    console.log(`  # | Name                          | Lang       | Last Push  | Description`);
+    console.log(`  --|-------------------------------|------------|------------|---------------------------`);
+    repos.forEach((repo, i) => {
+      const num = String(i + 1).padStart(3);
+      const name = repo.name.padEnd(29);
+      const lang = (repo.language ?? '-').padEnd(10);
+      const pushed = repo.pushedAt.slice(0, 10);
+      const desc = (repo.description ?? '').slice(0, 25);
+      console.log(`  ${num} | ${name} | ${lang} | ${pushed} | ${desc}`);
+    });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// clone
+// ---------------------------------------------------------------------------
+const runClone = async (
+  orgUrlString: string,
+  repoNames: string[],
+  workspaceDir: string,
+  jsonOutput: boolean,
+) => {
+  const orgUrl = parseOrgUrl(orgUrlString);
+  const allRepos = await listOrgRepos(orgUrl);
+
+  const toClone = repoNames.length > 0
+    ? allRepos.filter((r) => repoNames.includes(r.name))
+    : allRepos;
+
+  if (!existsSync(workspaceDir)) {
+    mkdirSync(workspaceDir, { recursive: true });
+  }
+
+  const results: Array<{ name: string; path: string; status: 'cloned' | 'exists' | 'error'; error?: string }> = [];
+
+  for (const repo of toClone) {
+    const targetDir = path.join(workspaceDir, repo.name);
+    if (existsSync(targetDir)) {
+      results.push({ name: repo.name, path: targetDir, status: 'exists' });
+      if (!jsonOutput) console.log(`  [exists] ${repo.name}`);
+      continue;
+    }
+
+    try {
+      await execFileAsync('git', ['clone', repo.cloneUrl, targetDir], { timeout: 120_000 });
+      results.push({ name: repo.name, path: targetDir, status: 'cloned' });
+      if (!jsonOutput) console.log(`  [cloned] ${repo.name}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      results.push({ name: repo.name, path: targetDir, status: 'error', error: message });
+      if (!jsonOutput) console.log(`  [error]  ${repo.name}: ${message}`);
+    }
+  }
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({ workspaceDir, results }, null, 2));
+  } else {
+    const cloned = results.filter((r) => r.status === 'cloned').length;
+    const existing = results.filter((r) => r.status === 'exists').length;
+    console.log(`\n${cloned} cloned, ${existing} already existed`);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// scan
+// ---------------------------------------------------------------------------
+const runScan = async (orgUrlString: string, includeAll: boolean, jsonOutput: boolean) => {
+  const orgUrl = parseOrgUrl(orgUrlString);
+
+  if (!jsonOutput) console.log(`Scanning ${orgUrl.host}/${orgUrl.org}...`);
+
+  const repos = await listOrgRepos(orgUrl);
+  if (!jsonOutput) console.log(`Found ${repos.length} repos. Analyzing...`);
+
+  const result = await discover(orgUrlString, repos, orgUrl.org, {
+    onRepoAnalyzing: (repo, idx, total) => {
+      if (!jsonOutput) process.stdout.write(`  [${idx + 1}/${total}] ${repo.name}...`);
+    },
+    onRepoAnalyzed: (analyzed) => {
+      if (!jsonOutput) {
+        const ports = [...analyzed.ports, ...analyzed.configPorts].map((p) => `${p.port}(${p.source})`).join(', ') || 'none';
+        console.log(` ${analyzed.classification} | ports: ${ports}`);
+      }
+    },
+  });
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({
+      orgUrl: result.orgUrl,
+      repos: result.analyzed.map((a) => ({
+        name: a.name,
+        description: a.repoInfo.description,
+        language: a.repoInfo.language,
+        classification: a.classification,
+        scripts: a.scripts,
+        ports: a.ports,
+        configPorts: a.configPorts,
+        hasDev: a.hasDev,
+        hasStart: a.hasStart,
+        hasTest: a.hasTest,
+        hasDockerfile: a.hasDockerfile,
+        hasDockerCompose: a.hasDockerCompose,
+        dockerComposeServices: a.dockerComposeServices,
+        dependencies: a.dependencies,
+        envVarHints: a.envVarHints,
+      })),
+      detectedDependencies: result.dependencies,
+    }, null, 2));
+  } else {
+    const services = result.analyzed.filter((a) => a.classification === 'service').length;
+    const infra = result.analyzed.filter((a) => a.classification === 'infra').length;
+    const libs = result.analyzed.filter((a) => a.classification === 'library').length;
+    console.log(`\nSummary: ${services} services, ${infra} infra, ${libs} libraries`);
+    console.log(`Dependencies: ${result.dependencies.length} detected`);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+const main = async () => {
+  const args = process.argv.slice(2);
+
+  if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
+    printHelp();
+    process.exit(0);
+  }
+
+  const command = args[0];
+  const jsonOutput = args.includes('--json');
+  const includeAll = args.includes('--all');
+
+  // Filter out flags and their values to get positional args
+  const positional: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i].startsWith('--')) {
+      if (args[i] === '--workspace' || args[i] === '--json' || args[i] === '--all' || args[i] === '--help') {
+        // --workspace takes a value, skip next arg too
+        if (args[i] === '--workspace') i++;
+      }
+      continue;
+    }
+    positional.push(args[i]);
+  }
+
+  switch (command) {
+    case 'init': {
+      const orgUrl = positional[1];
+      if (!orgUrl) {
+        console.error('Usage: orcha init <org-url> [workspace-dir]');
+        process.exit(1);
+      }
+      // If workspace-dir not provided, create ./<org-name>/ from the org URL
+      const orgName = parseOrgUrl(orgUrl).org;
+      const workspaceDir = positional[2]
+        ? path.resolve(positional[2])
+        : path.resolve(process.cwd(), orgName);
+      await runInit(orgUrl, workspaceDir, jsonOutput, includeAll);
+      break;
+    }
+
+    case 'list-repos': {
+      const orgUrl = positional[1];
+      if (!orgUrl) { console.error('Usage: orcha list-repos <org-url>'); process.exit(1); }
+      await runListRepos(orgUrl, jsonOutput);
+      break;
+    }
+
+    case 'clone': {
+      const orgUrl = positional[1];
+      if (!orgUrl) { console.error('Usage: orcha clone <org-url> [repo1 repo2 ...] --workspace <dir>'); process.exit(1); }
+      const wsIdx = args.indexOf('--workspace');
+      const wsDir = wsIdx >= 0 ? path.resolve(args[wsIdx + 1]) : path.resolve(process.cwd(), parseOrgUrl(orgUrl).org);
+      const repoNames = includeAll ? [] : positional.slice(2);
+      await runClone(orgUrl, repoNames, wsDir, jsonOutput);
+      break;
+    }
+
+    case 'scan': {
+      const orgUrl = positional[1];
+      if (!orgUrl) { console.error('Usage: orcha scan <org-url>'); process.exit(1); }
+      await runScan(orgUrl, includeAll, jsonOutput);
+      break;
+    }
+
+    case 'generate-config': {
+      const orgUrl = positional[1];
+      if (!orgUrl) { console.error('Usage: orcha generate-config <org-url>'); process.exit(1); }
+      const repos = await listOrgRepos(parseOrgUrl(orgUrl));
+      const result = await discover(orgUrl, repos, parseOrgUrl(orgUrl).org);
+      const outputPath = writeConfig(result.configYaml, process.cwd());
+      console.log(`Config written to: ${outputPath}`);
+      break;
+    }
+
+    default:
+      console.error(`Unknown command: ${command}`);
+      printHelp();
+      process.exit(1);
+  }
+};
+
+main().catch((err) => {
+  console.error('Error:', err.message);
+  process.exit(1);
+});
