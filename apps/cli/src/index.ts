@@ -31,6 +31,14 @@ import {
   canonicalizeServiceId,
   type ServiceDefinition,
 } from '@orcha/config-loader';
+import {
+  startStack,
+  stopService,
+  stopAll,
+  getStatus,
+  readLogTail,
+  getStartOrder,
+} from '@orcha/orchestrator';
 
 const execFileAsync = promisify(execFile);
 
@@ -45,6 +53,12 @@ Setup:
   clone <org-url> [repos...]       Clone repos into workspace
   generate-config <org-url>        Regex-based config fallback
 
+Stack:
+  up [preset|service] [--profile]  Start services with dependency resolution
+  down [service]                   Stop a service or all managed services
+  status                           Show running service statuses
+  logs <service> [lines]           Tail service logs
+
 Workspace:
   list services                    List all registered services
   list presets                     List stack presets
@@ -52,6 +66,8 @@ Workspace:
   doctor                           Check binaries and service health
   inspect config <service>         Show resolved service configuration
   verify stack                     Probe all service health checks
+
+Code Intelligence:
   pr list [--since <window>]       List PRs across repos (default: 2w)
   pr context <pr-url>              Full PR context (diff, comments, reviews)
   delta scan [--since <window>]    Scan git commits across repos (default: 1w)
@@ -611,6 +627,108 @@ const runPrList = async (since: string, jsonOutput: boolean) => {
 };
 
 // ---------------------------------------------------------------------------
+// up: Start services with dependency resolution
+// ---------------------------------------------------------------------------
+const runUp = async (target: string, profile: string | undefined, jsonOutput: boolean) => {
+  const order = getStartOrder(target, profile);
+
+  if (!jsonOutput) {
+    const preset = getPreset(target);
+    const profileLabel = profile ? ` --profile ${profile}` : '';
+    console.log(`\nStarting ${target}${profileLabel} (${order.length} services)...\n`);
+  }
+
+  const results = await startStack(target, profile, {
+    onStarting: (id, prof) => {
+      if (!jsonOutput) process.stdout.write(`  [starting] ${id} (${prof})...`);
+    },
+    onHealthWait: (id) => {
+      if (!jsonOutput) process.stdout.write(' waiting for health...');
+    },
+    onHealthy: (id) => {
+      if (!jsonOutput) console.log(' READY');
+    },
+    onFailed: (id, error) => {
+      if (!jsonOutput) console.log(` FAILED (${error})`);
+    },
+  });
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({ target, profile: profile ?? 'default', results }, null, 2));
+  } else {
+    const healthy = results.filter((r) => r.healthy).length;
+    const failed = results.filter((r) => !r.healthy).length;
+    console.log(`\n${healthy} started, ${failed} failed`);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// down: Stop services
+// ---------------------------------------------------------------------------
+const runDown = async (serviceId: string | undefined, jsonOutput: boolean) => {
+  if (serviceId) {
+    await stopService(serviceId);
+    if (jsonOutput) {
+      console.log(JSON.stringify({ stopped: [serviceId] }));
+    } else {
+      console.log(`Stopped ${serviceId}`);
+    }
+  } else {
+    const stopped = await stopAll();
+    if (jsonOutput) {
+      console.log(JSON.stringify({ stopped }));
+    } else {
+      if (stopped.length === 0) {
+        console.log('No services were running.');
+      } else {
+        console.log(`Stopped ${stopped.length} services: ${stopped.join(', ')}`);
+      }
+    }
+  }
+};
+
+// ---------------------------------------------------------------------------
+// status: Show running services
+// ---------------------------------------------------------------------------
+const runStatus = async (jsonOutput: boolean) => {
+  const statuses = await getStatus();
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({ services: statuses }, null, 2));
+  } else {
+    console.log(`\n  ${'SERVICE'.padEnd(32)} ${'STATE'.padEnd(8)} ${'PID'.padEnd(8)} ${'PROFILE'.padEnd(10)} URL`);
+    console.log(`  ${''.padEnd(32, '-')} ${''.padEnd(8, '-')} ${''.padEnd(8, '-')} ${''.padEnd(10, '-')} ${''.padEnd(30, '-')}`);
+    for (const s of statuses) {
+      const pidStr = s.pid ? String(s.pid) : '-';
+      const profStr = s.profile ?? '-';
+      console.log(`  ${s.serviceId.padEnd(32)} ${s.state.padEnd(8)} ${pidStr.padEnd(8)} ${profStr.padEnd(10)} ${s.url}`);
+    }
+  }
+};
+
+// ---------------------------------------------------------------------------
+// logs: Tail service logs
+// ---------------------------------------------------------------------------
+const runLogs = (serviceId: string, lines: number, jsonOutput: boolean) => {
+  const content = readLogTail(serviceId, lines);
+  if (content === null) {
+    if (jsonOutput) {
+      console.log(JSON.stringify({ serviceId, error: 'No logs found. Service may not be running or uses docker compose.' }));
+    } else {
+      console.error(`No logs found for ${serviceId}. Service may not be running or uses docker compose.`);
+      console.error(`For compose services, use: docker compose -p orcha-${serviceId} logs`);
+    }
+    return;
+  }
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({ serviceId, lines: content.split('\n').length, content }));
+  } else {
+    console.log(content);
+  }
+};
+
+// ---------------------------------------------------------------------------
 // pr context: Full PR context from a URL
 // ---------------------------------------------------------------------------
 type PrUrl = { host: string; owner: string; repo: string; number: number };
@@ -997,6 +1115,33 @@ const main = async () => {
       const profileIdx = args.indexOf('--profile');
       const profile = profileIdx >= 0 ? args[profileIdx + 1] : undefined;
       runGraph(target, profile, jsonOutput);
+      break;
+    }
+
+    case 'up': {
+      const target = positional[1] ?? getDefaults().upTarget ?? 'all';
+      const profIdx = args.indexOf('--profile');
+      const prof = profIdx >= 0 ? args[profIdx + 1] : undefined;
+      await runUp(target, prof, jsonOutput);
+      break;
+    }
+
+    case 'down': {
+      const svcId = positional[1];
+      await runDown(svcId, jsonOutput);
+      break;
+    }
+
+    case 'status': {
+      await runStatus(jsonOutput);
+      break;
+    }
+
+    case 'logs': {
+      const svcId = positional[1];
+      if (!svcId) { console.error('Usage: orcha logs <service> [lines]'); process.exit(1); }
+      const lineCount = positional[2] ? parseInt(positional[2], 10) : 50;
+      runLogs(svcId, lineCount, jsonOutput);
       break;
     }
 

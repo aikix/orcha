@@ -17,6 +17,7 @@
       "dependencies": {
         "@orcha/config-loader": "workspace:*",
         "@orcha/discovery": "workspace:*",
+        "@orcha/orchestrator": "workspace:*",
       },
     },
     "packages/config-loader": {
@@ -35,6 +36,14 @@
         "yaml": "^2.7.1",
       },
     },
+    "packages/orchestrator": {
+      "name": "@orcha/orchestrator",
+      "version": "0.1.0",
+      "dependencies": {
+        "@orcha/config-loader": "workspace:*",
+        "@orcha/service-definitions": "workspace:*",
+      },
+    },
     "packages/service-definitions": {
       "name": "@orcha/service-definitions",
       "version": "0.1.0",
@@ -46,6 +55,8 @@
     "@orcha/config-loader": ["@orcha/config-loader@workspace:packages/config-loader"],
 
     "@orcha/discovery": ["@orcha/discovery@workspace:packages/discovery"],
+
+    "@orcha/orchestrator": ["@orcha/orchestrator@workspace:packages/orchestrator"],
 
     "@orcha/service-definitions": ["@orcha/service-definitions@workspace:packages/service-definitions"],
 
