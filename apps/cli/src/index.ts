@@ -49,6 +49,7 @@ Workspace:
   list services                    List all registered services
   list presets                     List stack presets
   graph [preset|service]           Show dependency graph
+  doctor                           Check binaries and service health
 
 Flags:
   --profile <name>                 Profile for graph/up/inspect
@@ -304,6 +305,97 @@ const runScan = async (orgUrlString: string, includeAll: boolean, jsonOutput: bo
 };
 
 // ---------------------------------------------------------------------------
+// doctor: Check binaries and service health
+// ---------------------------------------------------------------------------
+const checkBinary = async (name: string): Promise<{ name: string; ok: boolean; version: string }> => {
+  try {
+    const { stdout } = await execFileAsync(name, ['--version'], { timeout: 5_000 });
+    return { name, ok: true, version: stdout.trim().split('\n')[0] };
+  } catch {
+    return { name, ok: false, version: 'not found' };
+  }
+};
+
+const probeHealth = async (url: string, expectedStatus?: number): Promise<{ ok: boolean; status: number | null; error?: string }> => {
+  if (url.startsWith('tcp://')) {
+    // TCP probe
+    const hostPort = url.replace('tcp://', '').split(':');
+    const host = hostPort[0];
+    const port = parseInt(hostPort[1], 10);
+    return new Promise((resolve) => {
+      const net = require('node:net') as typeof import('node:net');
+      const socket = net.createConnection({ host, port, timeout: 3000 });
+      socket.on('connect', () => { socket.destroy(); resolve({ ok: true, status: null }); });
+      socket.on('error', (err: Error) => { resolve({ ok: false, status: null, error: err.message }); });
+      socket.on('timeout', () => { socket.destroy(); resolve({ ok: false, status: null, error: 'timeout' }); });
+    });
+  }
+
+  // HTTP probe
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    const expected = expectedStatus ?? 200;
+    return { ok: response.status === expected, status: response.status };
+  } catch (err) {
+    return { ok: false, status: null, error: err instanceof Error ? err.message : String(err) };
+  }
+};
+
+const runDoctor = async (jsonOutput: boolean) => {
+  const config = loadConfig();
+  const onboard = config.onboard ?? { binaries: ['bun', 'docker', 'gh'] };
+  const binaries = onboard.binaries ?? ['bun', 'docker', 'gh'];
+
+  // Check binaries
+  const binaryResults = await Promise.all(binaries.map(checkBinary));
+
+  // Check service health
+  const services = listAllServiceDefinitions();
+  type ServiceHealth = { id: string; kind: string; url: string; checks: Array<{ name: string; ok: boolean; detail: string }> };
+  const serviceResults: ServiceHealth[] = [];
+
+  for (const svc of services) {
+    if (svc.healthChecks.length === 0) {
+      serviceResults.push({ id: svc.id, kind: svc.kind, url: svc.localUrl, checks: [] });
+      continue;
+    }
+
+    const checks: Array<{ name: string; ok: boolean; detail: string }> = [];
+    for (const hc of svc.healthChecks) {
+      const result = await probeHealth(hc.url, hc.expectedStatus);
+      checks.push({
+        name: hc.name,
+        ok: result.ok,
+        detail: result.ok
+          ? (result.status ? `${result.status}` : 'connected')
+          : (result.error ?? `status ${result.status}`),
+      });
+    }
+    serviceResults.push({ id: svc.id, kind: svc.kind, url: svc.localUrl, checks });
+  }
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({ binaries: binaryResults, services: serviceResults }, null, 2));
+  } else {
+    console.log(`\nBinaries:`);
+    for (const b of binaryResults) {
+      const icon = b.ok ? '✓' : '✗';
+      console.log(`  ${icon} ${b.name.padEnd(10)} ${b.version}`);
+    }
+
+    console.log(`\nServices:`);
+    console.log(`  ${'SERVICE'.padEnd(32)} ${'STATE'.padEnd(10)} URL`);
+    console.log(`  ${''.padEnd(32, '-')} ${''.padEnd(10, '-')} ${''.padEnd(40, '-')}`);
+    for (const svc of serviceResults) {
+      const allOk = svc.checks.length > 0 && svc.checks.every((c) => c.ok);
+      const anyCheck = svc.checks.length > 0;
+      const state = !anyCheck ? 'n/a' : allOk ? 'READY' : 'STOPPED';
+      console.log(`  ${svc.id.padEnd(32)} ${state.padEnd(10)} ${svc.url}`);
+    }
+  }
+};
+
+// ---------------------------------------------------------------------------
 // graph: Show dependency graph for a preset or service
 // ---------------------------------------------------------------------------
 const collectDependencies = (serviceId: string, profile: string | undefined, visited: Set<string>): void => {
@@ -485,6 +577,11 @@ const main = async () => {
       const profileIdx = args.indexOf('--profile');
       const profile = profileIdx >= 0 ? args[profileIdx + 1] : undefined;
       runGraph(target, profile, jsonOutput);
+      break;
+    }
+
+    case 'doctor': {
+      await runDoctor(jsonOutput);
       break;
     }
 
