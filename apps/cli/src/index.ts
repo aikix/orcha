@@ -51,6 +51,7 @@ Workspace:
   graph [preset|service]           Show dependency graph
   doctor                           Check binaries and service health
   inspect config <service>         Show resolved service configuration
+  verify stack                     Probe all service health checks
 
 Flags:
   --profile <name>                 Profile for graph/up/inspect
@@ -496,6 +497,68 @@ const runList = (subcommand: string, jsonOutput: boolean) => {
 };
 
 // ---------------------------------------------------------------------------
+// verify stack: Probe all service health checks
+// ---------------------------------------------------------------------------
+const runVerifyStack = async (jsonOutput: boolean) => {
+  const services = listAllServiceDefinitions();
+
+  type CheckResult = { name: string; url: string; ok: boolean; detail: string };
+  type ServiceVerification = { id: string; kind: string; url: string; passed: number; total: number; checks: CheckResult[] };
+  const results: ServiceVerification[] = [];
+
+  // Run all health checks in parallel per service
+  await Promise.all(services.map(async (svc) => {
+    if (svc.healthChecks.length === 0) {
+      results.push({ id: svc.id, kind: svc.kind, url: svc.localUrl, passed: 0, total: 0, checks: [] });
+      return;
+    }
+
+    const checks: CheckResult[] = await Promise.all(svc.healthChecks.map(async (hc) => {
+      const result = await probeHealth(hc.url, hc.expectedStatus);
+      return {
+        name: hc.name,
+        url: hc.url,
+        ok: result.ok,
+        detail: result.ok
+          ? (result.status ? `${result.status} OK` : 'connected')
+          : (result.error ?? `status ${result.status}`),
+      };
+    }));
+
+    const passed = checks.filter((c) => c.ok).length;
+    results.push({ id: svc.id, kind: svc.kind, url: svc.localUrl, passed, total: checks.length, checks });
+  }));
+
+  // Sort: services with checks first, then by id
+  results.sort((a, b) => {
+    if (a.total > 0 && b.total === 0) return -1;
+    if (a.total === 0 && b.total > 0) return 1;
+    return a.id.localeCompare(b.id);
+  });
+
+  const totalPassed = results.reduce((sum, r) => sum + r.passed, 0);
+  const totalChecks = results.reduce((sum, r) => sum + r.total, 0);
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({ summary: { passed: totalPassed, total: totalChecks }, services: results }, null, 2));
+  } else {
+    console.log(`\nStack Verification: ${totalPassed}/${totalChecks} checks passed\n`);
+    console.log(`  ${'SERVICE'.padEnd(32)} ${'CHECKS'.padEnd(8)} ${'STATUS'.padEnd(10)} DETAIL`);
+    console.log(`  ${''.padEnd(32, '-')} ${''.padEnd(8, '-')} ${''.padEnd(10, '-')} ${''.padEnd(30, '-')}`);
+    for (const svc of results) {
+      if (svc.total === 0) {
+        console.log(`  ${svc.id.padEnd(32)} ${'n/a'.padEnd(8)} ${''.padEnd(10)} no health checks`);
+        continue;
+      }
+      const status = svc.passed === svc.total ? 'PASS' : 'FAIL';
+      const checkStr = `${svc.passed}/${svc.total}`;
+      const detail = svc.checks.map((c) => `${c.name}: ${c.detail}`).join(', ');
+      console.log(`  ${svc.id.padEnd(32)} ${checkStr.padEnd(8)} ${status.padEnd(10)} ${detail}`);
+    }
+  }
+};
+
+// ---------------------------------------------------------------------------
 // inspect config: Show resolved service configuration
 // ---------------------------------------------------------------------------
 const runInspectConfig = (serviceId: string, profile: string | undefined, jsonOutput: boolean) => {
@@ -635,6 +698,17 @@ const main = async () => {
       const profileIdx = args.indexOf('--profile');
       const profile = profileIdx >= 0 ? args[profileIdx + 1] : undefined;
       runGraph(target, profile, jsonOutput);
+      break;
+    }
+
+    case 'verify': {
+      const sub = positional[1];
+      if (sub === 'stack') {
+        await runVerifyStack(jsonOutput);
+      } else {
+        console.error('Usage: orcha verify stack');
+        process.exit(1);
+      }
       break;
     }
 
