@@ -53,6 +53,7 @@ Workspace:
   inspect config <service>         Show resolved service configuration
   verify stack                     Probe all service health checks
   pr list [--since <window>]       List PRs across repos (default: 2w)
+  pr context <pr-url>              Full PR context (diff, comments, reviews)
   delta scan [--since <window>]    Scan git commits across repos (default: 1w)
 
 Flags:
@@ -610,6 +611,109 @@ const runPrList = async (since: string, jsonOutput: boolean) => {
 };
 
 // ---------------------------------------------------------------------------
+// pr context: Full PR context from a URL
+// ---------------------------------------------------------------------------
+type PrUrl = { host: string; owner: string; repo: string; number: number };
+
+const parsePrUrl = (url: string): PrUrl => {
+  // https://git.example.com/my-team/status-ui/pull/617
+  // https://github.com/org/repo/pull/123
+  const cleaned = url.replace(/\/+$/, '');
+  const withProtocol = cleaned.startsWith('http') ? cleaned : `https://${cleaned}`;
+  const parsed = new URL(withProtocol);
+  const parts = parsed.pathname.split('/').filter(Boolean);
+  // parts: [owner, repo, 'pull', number]
+  if (parts.length < 4 || parts[2] !== 'pull') {
+    throw new Error(`Invalid PR URL: ${url}. Expected: https://host/owner/repo/pull/123`);
+  }
+  return {
+    host: parsed.hostname,
+    owner: parts[0],
+    repo: parts[1],
+    number: parseInt(parts[3], 10),
+  };
+};
+
+const runPrContext = async (prUrlString: string, jsonOutput: boolean) => {
+  const pr = parsePrUrl(prUrlString);
+  const repoSelector = pr.host === 'github.com'
+    ? `${pr.owner}/${pr.repo}`
+    : `${pr.host}/${pr.owner}/${pr.repo}`;
+
+  // Fetch PR metadata
+  const { stdout: metaOut } = await execFileAsync('gh', [
+    'pr', 'view', String(pr.number),
+    '--repo', repoSelector,
+    '--json', 'number,title,author,state,body,reviewDecision,files,additions,deletions,baseRefName,headRefName,comments,reviews,labels',
+  ], { timeout: 30_000 });
+  const meta = JSON.parse(metaOut);
+
+  // Fetch diff
+  let diff = '';
+  try {
+    const { stdout: diffOut } = await execFileAsync('gh', [
+      'pr', 'diff', String(pr.number),
+      '--repo', repoSelector,
+    ], { timeout: 30_000 });
+    diff = diffOut;
+  } catch { /* diff may fail for merged PRs on some GHE versions */ }
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({
+      url: prUrlString,
+      repo: `${pr.owner}/${pr.repo}`,
+      number: meta.number,
+      title: meta.title,
+      author: meta.author?.login,
+      state: meta.state,
+      reviewDecision: meta.reviewDecision,
+      base: meta.baseRefName,
+      head: meta.headRefName,
+      additions: meta.additions,
+      deletions: meta.deletions,
+      body: meta.body,
+      files: meta.files,
+      comments: meta.comments,
+      reviews: meta.reviews,
+      labels: meta.labels,
+      diff,
+    }, null, 2));
+  } else {
+    console.log(`\n${meta.title}`);
+    console.log(`${pr.owner}/${pr.repo}#${meta.number} | ${meta.state} | ${meta.reviewDecision ?? 'PENDING'}`);
+    console.log(`${meta.author?.login} | ${meta.baseRefName} ← ${meta.headRefName} | +${meta.additions}/-${meta.deletions}`);
+
+    if (meta.body) {
+      console.log(`\n${meta.body.slice(0, 500)}${meta.body.length > 500 ? '...' : ''}`);
+    }
+
+    console.log(`\nFiles (${meta.files?.length ?? 0}):`);
+    for (const f of (meta.files ?? [])) {
+      console.log(`  ${f.path} (+${f.additions}/-${f.deletions})`);
+    }
+
+    if (meta.reviews?.length > 0) {
+      console.log(`\nReviews:`);
+      for (const r of meta.reviews) {
+        console.log(`  ${r.author?.login}: ${r.state}${r.body ? ` — ${r.body.slice(0, 80)}` : ''}`);
+      }
+    }
+
+    if (meta.comments?.length > 0) {
+      console.log(`\nComments (${meta.comments.length}):`);
+      for (const c of meta.comments.slice(0, 5)) {
+        console.log(`  ${c.author?.login}: ${c.body?.slice(0, 100)}`);
+      }
+    }
+
+    if (diff) {
+      const diffLines = diff.split('\n').length;
+      console.log(`\nDiff: ${diffLines} lines (use --json to get full diff)`);
+    }
+  }
+};
+
+// ---------------------------------------------------------------------------
 // delta scan: Scan git commits across repos
 // ---------------------------------------------------------------------------
 type CommitEntry = { hash: string; subject: string; author: string; date: string };
@@ -915,8 +1019,12 @@ const main = async () => {
         const sinceIdx = args.indexOf('--since');
         const since = sinceIdx >= 0 ? args[sinceIdx + 1] : '2w';
         await runPrList(since, jsonOutput);
+      } else if (sub === 'context') {
+        const prUrl = positional[2];
+        if (!prUrl) { console.error('Usage: orcha pr context <pr-url>'); process.exit(1); }
+        await runPrContext(prUrl, jsonOutput);
       } else {
-        console.error('Usage: orcha pr list [--since <window>]');
+        console.error('Usage: orcha pr <list|context>');
         process.exit(1);
       }
       break;
