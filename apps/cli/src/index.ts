@@ -29,7 +29,11 @@ import {
   getDefaults,
   loadConfig,
   canonicalizeServiceId,
+  listFixtures,
+  getFixture,
   type ServiceDefinition,
+  type SeedFixture,
+  type VerificationProbe,
 } from '@orcha/config-loader';
 import {
   startStack,
@@ -66,6 +70,8 @@ Workspace:
   doctor                           Check binaries and service health
   inspect config <service>         Show resolved service configuration
   verify stack                     Probe all service health checks
+  verify api [service]             Run API verification probes from config
+  seed [fixture...]                Execute seed fixtures from config
 
 Code Intelligence:
   pr list [--since <window>]       List PRs across repos (default: 2w)
@@ -627,6 +633,171 @@ const runPrList = async (since: string, jsonOutput: boolean) => {
 };
 
 // ---------------------------------------------------------------------------
+// seed: Execute seed fixtures from config
+// ---------------------------------------------------------------------------
+const executeHttpRequest = async (
+  method: string,
+  url: string,
+  body?: unknown,
+  headers?: Record<string, string>,
+): Promise<{ status: number; ok: boolean; body?: unknown }> => {
+  try {
+    const options: RequestInit = {
+      method,
+      headers: { 'Content-Type': 'application/json', ...headers },
+      signal: AbortSignal.timeout(30_000),
+    };
+    if (body && method !== 'GET') {
+      options.body = JSON.stringify(body);
+    }
+    const response = await fetch(url, options);
+    let responseBody: unknown;
+    try { responseBody = await response.json(); } catch { /* not json */ }
+    return { status: response.status, ok: response.ok, body: responseBody };
+  } catch (err) {
+    return { status: 0, ok: false, body: { error: err instanceof Error ? err.message : String(err) } };
+  }
+};
+
+const topologicalSortFixtures = (fixtures: readonly SeedFixture[]): SeedFixture[] => {
+  const byId = new Map(fixtures.map((f) => [f.id, f]));
+  const visited = new Set<string>();
+  const result: SeedFixture[] = [];
+
+  const visit = (id: string) => {
+    if (visited.has(id)) return;
+    visited.add(id);
+    const fixture = byId.get(id);
+    if (!fixture) return;
+    for (const dep of fixture.dependsOn ?? []) {
+      visit(dep);
+    }
+    result.push(fixture);
+  };
+
+  for (const f of fixtures) visit(f.id);
+  return result;
+};
+
+const runSeed = async (fixtureIds: string[], jsonOutput: boolean) => {
+  const allFixtures = listFixtures();
+  if (allFixtures.length === 0) {
+    if (jsonOutput) {
+      console.log(JSON.stringify({ error: 'No fixtures defined in orcha.config.yaml' }));
+    } else {
+      console.error('No fixtures defined in orcha.config.yaml');
+    }
+    return;
+  }
+
+  // Select fixtures: specific IDs or all
+  const selected = fixtureIds.length > 0
+    ? allFixtures.filter((f) => fixtureIds.includes(f.id))
+    : [...allFixtures];
+
+  // Include dependencies
+  const withDeps = new Set(selected.map((f) => f.id));
+  for (const f of selected) {
+    for (const dep of f.dependsOn ?? []) withDeps.add(dep);
+  }
+  const toRun = topologicalSortFixtures(allFixtures.filter((f) => withDeps.has(f.id)));
+
+  type SeedResult = { id: string; targetService: string; status: number; expected: number; ok: boolean; error?: string };
+  const results: SeedResult[] = [];
+
+  for (const fixture of toRun) {
+    if (!jsonOutput) process.stdout.write(`  [${fixture.id}] ${fixture.label}...`);
+
+    const result = await executeHttpRequest(fixture.method, fixture.url, fixture.body, fixture.headers);
+    const ok = result.status === fixture.expectedStatus;
+    results.push({
+      id: fixture.id,
+      targetService: fixture.targetService,
+      status: result.status,
+      expected: fixture.expectedStatus,
+      ok,
+      error: ok ? undefined : `expected ${fixture.expectedStatus}, got ${result.status}`,
+    });
+
+    if (!jsonOutput) console.log(ok ? ` OK (${result.status})` : ` FAIL (${result.status}, expected ${fixture.expectedStatus})`);
+  }
+
+  if (jsonOutput) {
+    const passed = results.filter((r) => r.ok).length;
+    console.log(JSON.stringify({ total: results.length, passed, results }, null, 2));
+  } else {
+    const passed = results.filter((r) => r.ok).length;
+    console.log(`\n${passed}/${results.length} fixtures seeded`);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// verify api: Execute verification probes from config
+// ---------------------------------------------------------------------------
+const runVerifyApi = async (serviceId: string | undefined, jsonOutput: boolean) => {
+  const services = serviceId
+    ? [getServiceDefinition(serviceId)]
+    : listAllServiceDefinitions();
+
+  type ProbeResult = { service: string; id: string; label: string; method: string; url: string; status: number; expected: number; ok: boolean; error?: string; keyCheck?: { expected: string[]; missing: string[] } };
+  const results: ProbeResult[] = [];
+
+  for (const svc of services) {
+    const probes = svc.verification.api;
+    if (probes.length === 0) continue;
+
+    for (const probe of probes) {
+      if (!jsonOutput) process.stdout.write(`  [${svc.id}] ${probe.label}...`);
+
+      const result = await executeHttpRequest(probe.method, probe.url, probe.body, probe.headers);
+      const statusOk = result.status === probe.expectedStatus;
+
+      // Check expected keys if specified
+      let keyCheck: { expected: string[]; missing: string[] } | undefined;
+      if (statusOk && probe.expectKeys && result.body && typeof result.body === 'object') {
+        const bodyKeys = Object.keys(result.body as Record<string, unknown>);
+        const missing = probe.expectKeys.filter((k) => !bodyKeys.includes(k));
+        if (missing.length > 0) {
+          keyCheck = { expected: [...probe.expectKeys], missing };
+        }
+      }
+
+      const ok = statusOk && !keyCheck;
+      results.push({
+        service: svc.id,
+        id: probe.id,
+        label: probe.label,
+        method: probe.method,
+        url: probe.url,
+        status: result.status,
+        expected: probe.expectedStatus,
+        ok,
+        error: !statusOk ? `expected ${probe.expectedStatus}, got ${result.status}` : undefined,
+        keyCheck,
+      });
+
+      if (!jsonOutput) {
+        if (ok) console.log(` OK (${result.status})`);
+        else if (!statusOk) console.log(` FAIL (${result.status}, expected ${probe.expectedStatus})`);
+        else console.log(` FAIL (missing keys: ${keyCheck!.missing.join(', ')})`);
+      }
+    }
+  }
+
+  if (jsonOutput) {
+    const passed = results.filter((r) => r.ok).length;
+    console.log(JSON.stringify({ total: results.length, passed, results }, null, 2));
+  } else {
+    if (results.length === 0) {
+      console.log('No API verification probes defined.');
+    } else {
+      const passed = results.filter((r) => r.ok).length;
+      console.log(`\n${passed}/${results.length} probes passed`);
+    }
+  }
+};
+
+// ---------------------------------------------------------------------------
 // up: Start services with dependency resolution
 // ---------------------------------------------------------------------------
 const runUp = async (target: string, profile: string | undefined, jsonOutput: boolean) => {
@@ -1179,10 +1350,19 @@ const main = async () => {
       const sub = positional[1];
       if (sub === 'stack') {
         await runVerifyStack(jsonOutput);
+      } else if (sub === 'api') {
+        const svcId = positional[2]; // optional — if omitted, all services
+        await runVerifyApi(svcId, jsonOutput);
       } else {
-        console.error('Usage: orcha verify stack');
+        console.error('Usage: orcha verify <stack|api [service]>');
         process.exit(1);
       }
+      break;
+    }
+
+    case 'seed': {
+      const fixtureIds = positional.slice(1);
+      await runSeed(fixtureIds, jsonOutput);
       break;
     }
 
