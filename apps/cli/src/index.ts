@@ -50,6 +50,7 @@ Workspace:
   list presets                     List stack presets
   graph [preset|service]           Show dependency graph
   doctor                           Check binaries and service health
+  inspect config <service>         Show resolved service configuration
 
 Flags:
   --profile <name>                 Profile for graph/up/inspect
@@ -495,6 +496,63 @@ const runList = (subcommand: string, jsonOutput: boolean) => {
 };
 
 // ---------------------------------------------------------------------------
+// inspect config: Show resolved service configuration
+// ---------------------------------------------------------------------------
+const runInspectConfig = (serviceId: string, profile: string | undefined, jsonOutput: boolean) => {
+  const resolved = resolveServiceDefinition(serviceId, profile);
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({
+      serviceId: resolved.id,
+      profile: resolved.profile,
+      runtime: resolved.runtime,
+      localUrl: resolved.localUrl,
+      dependencies: resolved.dependencies,
+      referenceDeps: resolved.referenceDeps ?? [],
+      healthChecks: resolved.healthChecks,
+      env: resolved.env,
+      nodeConfig: resolved.nodeConfig,
+    }, null, 2));
+  } else {
+    console.log(`\nService: ${resolved.id} (${resolved.label})`);
+    console.log(`Profile: ${resolved.profile}`);
+    console.log(`Kind:    ${resolved.kind}`);
+    console.log(`URL:     ${resolved.localUrl}`);
+    console.log(`Runtime: ${resolved.runtime.type === 'script' ? `${resolved.runtime.command.bin} ${resolved.runtime.command.args.join(' ')}` : `compose: ${(resolved.runtime as any).composeFile}`}`);
+
+    if (resolved.dependencies.length > 0) {
+      console.log(`\nDependencies: ${resolved.dependencies.join(', ')}`);
+    }
+    if (resolved.referenceDeps && resolved.referenceDeps.length > 0) {
+      console.log(`Reference deps: ${resolved.referenceDeps.join(', ')}`);
+    }
+
+    if (resolved.healthChecks.length > 0) {
+      console.log(`\nHealth checks:`);
+      for (const hc of resolved.healthChecks) {
+        console.log(`  ${hc.name}: ${hc.url}${hc.expectedStatus ? ` (${hc.expectedStatus})` : ''}`);
+      }
+    }
+
+    if (Object.keys(resolved.env).length > 0) {
+      console.log(`\nEnvironment:`);
+      for (const [key, value] of Object.entries(resolved.env)) {
+        if (key === 'NODE_CONFIG') {
+          console.log(`  NODE_CONFIG: (see nodeConfig below)`);
+        } else {
+          console.log(`  ${key}=${value}`);
+        }
+      }
+    }
+
+    if (Object.keys(resolved.nodeConfig).length > 0) {
+      console.log(`\nNode config:`);
+      console.log(`  ${JSON.stringify(resolved.nodeConfig, null, 2).split('\n').join('\n  ')}`);
+    }
+  }
+};
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 const main = async () => {
@@ -577,6 +635,17 @@ const main = async () => {
       const profileIdx = args.indexOf('--profile');
       const profile = profileIdx >= 0 ? args[profileIdx + 1] : undefined;
       runGraph(target, profile, jsonOutput);
+      break;
+    }
+
+    case 'inspect': {
+      const sub = positional[1];
+      if (sub !== 'config') { console.error('Usage: orcha inspect config <service> [--profile <name>]'); process.exit(1); }
+      const svcId = positional[2];
+      if (!svcId) { console.error('Usage: orcha inspect config <service>'); process.exit(1); }
+      const profIdx = args.indexOf('--profile');
+      const prof = profIdx >= 0 ? args[profIdx + 1] : undefined;
+      runInspectConfig(svcId, prof, jsonOutput);
       break;
     }
 
