@@ -52,6 +52,7 @@ Workspace:
   doctor                           Check binaries and service health
   inspect config <service>         Show resolved service configuration
   verify stack                     Probe all service health checks
+  pr list [--since <window>]       List PRs across repos (default: 2w)
 
 Flags:
   --profile <name>                 Profile for graph/up/inspect
@@ -497,6 +498,117 @@ const runList = (subcommand: string, jsonOutput: boolean) => {
 };
 
 // ---------------------------------------------------------------------------
+// pr list: List PRs across repos
+// ---------------------------------------------------------------------------
+type PrEntry = {
+  repo: string;
+  number: number;
+  title: string;
+  author: string;
+  state: string;
+  reviewDecision: string;
+  createdAt: string;
+  url: string;
+};
+
+const runPrList = async (since: string, jsonOutput: boolean) => {
+  const services = listServiceDefinitions(true); // include infra for completeness
+  const github = loadConfig().github;
+  if (!github) {
+    console.error('No github config in orcha.config.yaml');
+    process.exit(1);
+  }
+
+  // Build date filter
+  const sinceDate = new Date();
+  const match = since.match(/^(\d+)([dwm])$/);
+  if (match) {
+    const [, num, unit] = match;
+    const n = parseInt(num, 10);
+    if (unit === 'd') sinceDate.setDate(sinceDate.getDate() - n);
+    else if (unit === 'w') sinceDate.setDate(sinceDate.getDate() - n * 7);
+    else if (unit === 'm') sinceDate.setMonth(sinceDate.getMonth() - n);
+  }
+  const dateStr = sinceDate.toISOString().slice(0, 10);
+
+  // Build repo selector: HOST/OWNER/REPO for GHE, OWNER/REPO for github.com
+  const repoSelector = (repoName: string) =>
+    github.host === 'github.com'
+      ? `${github.org}/${repoName}`
+      : `${github.host}/${github.org}/${repoName}`;
+
+  // Get unique repos (skip infra, deduplicate by repo name)
+  const seen = new Set<string>();
+  const repos: Array<{ name: string; repoPath: string }> = [];
+  for (const svc of services) {
+    const repoName = svc.repoPath.split('/').pop() ?? svc.id;
+    if (seen.has(repoName) || svc.kind === 'infra') continue;
+    seen.add(repoName);
+    repos.push({ name: repoName, repoPath: svc.repoPath });
+  }
+
+  const allPrs: PrEntry[] = [];
+
+  // Scan repos in parallel
+  await Promise.all(repos.map(async (repo) => {
+    try {
+      const { stdout } = await execFileAsync('gh', [
+        'pr', 'list',
+        '--repo', repoSelector(repo.name),
+        '--limit', '30',
+        '--search', `updated:>=${dateStr}`,
+        '--state', 'all',
+        '--json', 'number,title,author,state,reviewDecision,createdAt,url',
+      ], { timeout: 30_000 });
+
+      const prs = JSON.parse(stdout) as Array<{
+        number: number; title: string; author: { login: string };
+        state: string; reviewDecision: string; createdAt: string; url: string;
+      }>;
+
+      for (const pr of prs) {
+        allPrs.push({
+          repo: repo.name,
+          number: pr.number,
+          title: pr.title,
+          author: pr.author.login,
+          state: pr.state,
+          reviewDecision: pr.reviewDecision || 'REVIEW_REQUIRED',
+          createdAt: pr.createdAt.slice(0, 10),
+          url: pr.url,
+        });
+      }
+    } catch {
+      // Skip repos where gh fails (no access, not found, etc.)
+    }
+  }));
+
+  // Sort by created date descending
+  allPrs.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({
+      since: dateStr,
+      reposScanned: repos.length,
+      totalPrs: allPrs.length,
+      prs: allPrs,
+    }, null, 2));
+  } else {
+    console.log(`\nPRs since ${dateStr} — ${allPrs.length} across ${repos.length} repos\n`);
+    if (allPrs.length === 0) {
+      console.log('  No PRs found.');
+      return;
+    }
+    console.log(`  ${'REPO'.padEnd(24)} ${'#'.padEnd(5)} ${'TITLE'.padEnd(42)} ${'AUTHOR'.padEnd(18)} ${'STATE'.padEnd(8)} ${'REVIEW'.padEnd(18)} DATE`);
+    console.log(`  ${''.padEnd(24, '-')} ${''.padEnd(5, '-')} ${''.padEnd(42, '-')} ${''.padEnd(18, '-')} ${''.padEnd(8, '-')} ${''.padEnd(18, '-')} ${''.padEnd(10, '-')}`);
+    for (const pr of allPrs) {
+      const title = pr.title.length > 40 ? pr.title.slice(0, 39) + '…' : pr.title;
+      console.log(`  ${pr.repo.padEnd(24)} ${String(pr.number).padEnd(5)} ${title.padEnd(42)} ${pr.author.padEnd(18)} ${pr.state.padEnd(8)} ${pr.reviewDecision.padEnd(18)} ${pr.createdAt}`);
+    }
+  }
+};
+
+// ---------------------------------------------------------------------------
 // verify stack: Probe all service health checks
 // ---------------------------------------------------------------------------
 const runVerifyStack = async (jsonOutput: boolean) => {
@@ -634,9 +746,9 @@ const main = async () => {
   const positional: string[] = [];
   for (let i = 0; i < args.length; i++) {
     if (args[i].startsWith('--')) {
-      if (['--workspace', '--json', '--all', '--help', '--profile'].includes(args[i])) {
+      if (['--workspace', '--json', '--all', '--help', '--profile', '--since'].includes(args[i])) {
         // flags that take a value — skip next arg too
-        if (args[i] === '--workspace' || args[i] === '--profile') i++;
+        if (args[i] === '--workspace' || args[i] === '--profile' || args[i] === '--since') i++;
       }
       continue;
     }
@@ -698,6 +810,19 @@ const main = async () => {
       const profileIdx = args.indexOf('--profile');
       const profile = profileIdx >= 0 ? args[profileIdx + 1] : undefined;
       runGraph(target, profile, jsonOutput);
+      break;
+    }
+
+    case 'pr': {
+      const sub = positional[1];
+      if (sub === 'list') {
+        const sinceIdx = args.indexOf('--since');
+        const since = sinceIdx >= 0 ? args[sinceIdx + 1] : '2w';
+        await runPrList(since, jsonOutput);
+      } else {
+        console.error('Usage: orcha pr list [--since <window>]');
+        process.exit(1);
+      }
       break;
     }
 
