@@ -71,15 +71,29 @@ const probeService = async (resolved: ResolvedServiceDefinition): Promise<boolea
 
 /**
  * Wait for a service to become healthy, polling every interval.
+ * Tolerates up to `maxTransientFailures` consecutive failures before giving up
+ * (allows for brief startup hiccups without declaring the service dead).
  */
 const waitForHealth = async (
   resolved: ResolvedServiceDefinition,
   timeoutMs = 60_000,
   intervalMs = 2000,
+  maxTransientFailures = 3,
 ): Promise<boolean> => {
   const deadline = Date.now() + timeoutMs;
+  let consecutiveFailures = 0;
+  let everHealthy = false;
+
   while (Date.now() < deadline) {
-    if (await probeService(resolved)) return true;
+    const healthy = await probeService(resolved);
+    if (healthy) {
+      return true;
+    }
+    consecutiveFailures++;
+    // Only fail fast after becoming healthy once then failing repeatedly
+    if (everHealthy && consecutiveFailures >= maxTransientFailures) {
+      return false;
+    }
     await new Promise((r) => setTimeout(r, intervalMs));
   }
   return false;
@@ -152,11 +166,46 @@ const startComposeService = async (
   return { pid: -1 };
 };
 
+/**
+ * Rotate log files for a service. Keeps the last `maxFiles` logs.
+ * current.log -> service.1.log, service.1.log -> service.2.log, etc.
+ */
+const rotateLogs = (serviceId: string, maxFiles = 5): void => {
+  const logDir = getLogDir();
+  const baseName = `${serviceId}.log`;
+  const currentLog = path.join(logDir, baseName);
+
+  if (!existsSync(currentLog)) return;
+
+  // Shift existing numbered logs
+  for (let i = maxFiles - 1; i >= 1; i--) {
+    const from = path.join(logDir, `${serviceId}.${i}.log`);
+    const to = path.join(logDir, `${serviceId}.${i + 1}.log`);
+    if (existsSync(from)) {
+      try { require('node:fs').renameSync(from, to); } catch { /* best effort */ }
+    }
+  }
+
+  // Move current to .1.log
+  try {
+    require('node:fs').renameSync(currentLog, path.join(logDir, `${serviceId}.1.log`));
+  } catch { /* best effort */ }
+
+  // Delete oldest if over limit
+  const oldest = path.join(logDir, `${serviceId}.${maxFiles + 1}.log`);
+  if (existsSync(oldest)) {
+    try { require('node:fs').unlinkSync(oldest); } catch { /* best effort */ }
+  }
+};
+
 const startScriptService = async (
   resolved: ResolvedServiceDefinition,
 ): Promise<{ pid: number; logFile: string }> => {
   if (resolved.runtime.type !== 'script') throw new Error('Not a script service');
   const { command } = resolved.runtime;
+
+  // Rotate old logs before starting
+  rotateLogs(resolved.id);
 
   const logFile = path.join(getLogDir(), `${resolved.id}.log`);
   const logStream = createWriteStream(logFile, { flags: 'w' });
@@ -248,6 +297,30 @@ export const startService = async (
 // Stop a service
 // ---------------------------------------------------------------------------
 
+/**
+ * Send SIGTERM, wait for graceful exit, then SIGKILL if still alive.
+ */
+const gracefulKill = async (pid: number, gracePeriodMs = 10_000): Promise<void> => {
+  // Try to kill the process group first
+  const sendSignal = (sig: NodeJS.Signals) => {
+    try { process.kill(-pid, sig); } catch {
+      try { process.kill(pid, sig); } catch { /* already dead */ }
+    }
+  };
+
+  sendSignal('SIGTERM');
+
+  // Wait for process to exit
+  const deadline = Date.now() + gracePeriodMs;
+  while (Date.now() < deadline) {
+    if (!isProcessAlive(pid)) return;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+
+  // Still alive — force kill
+  sendSignal('SIGKILL');
+};
+
 export const stopService = async (serviceId: string): Promise<boolean> => {
   const resolved = resolveServiceDefinition(serviceId);
 
@@ -262,16 +335,11 @@ export const stopService = async (serviceId: string): Promise<boolean> => {
     return true;
   }
 
-  // Script service — kill the process tree
+  // Script service — graceful shutdown
   const state = readState();
   const entry = state.processes.find((p) => p.serviceId === serviceId);
   if (entry && entry.pid > 0) {
-    try {
-      // Kill the process group (negative PID kills the group)
-      process.kill(-entry.pid, 'SIGTERM');
-    } catch {
-      try { process.kill(entry.pid, 'SIGTERM'); } catch { /* already dead */ }
-    }
+    await gracefulKill(entry.pid);
   }
   removeProcess(serviceId);
   return true;
@@ -302,6 +370,9 @@ export const startStack = async (
     onFailed?: (id: string, error: string) => void;
   },
 ): Promise<StartResult[]> => {
+  // Clean up stale processes before starting anything
+  cleanStaleProcesses();
+
   const order = getStartOrder(target, profile);
   const results: StartResult[] = [];
 
