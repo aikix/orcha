@@ -232,3 +232,61 @@ export const cloneAndAnalyze = async (repoInfo: RepoInfo): Promise<AnalyzedRepo>
     await cleanupClone(repoDir);
   }
 };
+
+/**
+ * Build a RepoInfo from a local git repo directory.
+ * Reads git remote origin to populate cloneUrl, and extracts metadata from the repo.
+ */
+export const repoInfoFromLocal = async (repoDir: string): Promise<RepoInfo | null> => {
+  const name = path.basename(repoDir);
+
+  // Must be a git repo
+  if (!existsSync(path.join(repoDir, '.git'))) return null;
+
+  let cloneUrl = '';
+  try {
+    const { stdout } = await execFileAsync('git', ['remote', 'get-url', 'origin'], {
+      cwd: repoDir,
+      timeout: 5_000,
+    });
+    cloneUrl = stdout.trim();
+  } catch {
+    // No remote — still analyzable, just no clone URL
+  }
+
+  let language: string | null = null;
+  if (existsSync(path.join(repoDir, 'package.json'))) language = 'JavaScript';
+  if (existsSync(path.join(repoDir, 'tsconfig.json'))) language = 'TypeScript';
+  if (existsSync(path.join(repoDir, 'pyproject.toml')) || existsSync(path.join(repoDir, 'setup.py'))) language = 'Python';
+  if (existsSync(path.join(repoDir, 'go.mod'))) language = 'Go';
+  if (existsSync(path.join(repoDir, 'pom.xml')) || existsSync(path.join(repoDir, 'build.gradle'))) language = 'Java';
+
+  let defaultBranch = 'main';
+  try {
+    const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd: repoDir,
+      timeout: 5_000,
+    });
+    defaultBranch = stdout.trim();
+  } catch { /* use default */ }
+
+  return {
+    name,
+    description: null,
+    language,
+    archived: false,
+    fork: false,
+    pushedAt: new Date().toISOString(),
+    defaultBranch,
+    cloneUrl,
+  };
+};
+
+/**
+ * Analyze a local repo directory without cloning.
+ */
+export const analyzeLocalRepo = async (repoDir: string): Promise<AnalyzedRepo | null> => {
+  const repoInfo = await repoInfoFromLocal(repoDir);
+  if (!repoInfo) return null;
+  return analyzeRepo(repoDir, repoInfo);
+};

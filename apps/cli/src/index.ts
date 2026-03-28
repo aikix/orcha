@@ -16,6 +16,7 @@ import {
   parseOrgUrl,
   listOrgRepos,
   discover,
+  discoverLocal,
   writeConfig,
   type RepoInfo,
 } from '@orcha/discovery';
@@ -55,7 +56,8 @@ const printHelp = () => {
   orcha [command]
 
 Setup:
-  init <org-url> [workspace-dir]   Diff remote org vs local workspace
+  init [org-url] [workspace-dir]   Init workspace (org URL, local dir, or both)
+  init <workspace-dir>             Scan existing local workspace (no GitHub needed)
   list-repos <org-url>             List repos in a GitHub org
   scan <org-url> [--all]           Shallow clone + analyze repos
   clone <org-url> [repos...]       Clone repos into workspace
@@ -94,7 +96,10 @@ Flags:
   --help, -h                       Show this help
 
 Examples:
-  orcha init https://github.com/my-org ~/Workspace/myteam
+  orcha init https://github.com/my-org              Scan org, diff against ./<org>/
+  orcha init https://github.com/my-org ~/Workspace   Scan org, diff against existing dir
+  orcha init ~/Workspace/myteam                      Scan existing local workspace
+  orcha init                                         Scan current directory
   orcha graph core --profile staging
   orcha list services --json`);
 };
@@ -209,6 +214,71 @@ const runInit = async (
 
     console.log(`\nUse /orcha-init in Claude Code for agent-powered setup.`);
     console.log(`The agent will ask which missing repos to clone and generate orcha.config.yaml.`);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// init (local): Scan an existing workspace directory without GitHub API
+// ---------------------------------------------------------------------------
+const runInitLocal = async (
+  workspaceDir: string,
+  jsonOutput: boolean,
+) => {
+  if (!existsSync(workspaceDir)) {
+    console.error(`Directory not found: ${workspaceDir}`);
+    process.exit(1);
+  }
+
+  if (!jsonOutput) console.log(`\nScanning local workspace: ${workspaceDir}...`);
+
+  const result = await discoverLocal(workspaceDir, {
+    onRepoAnalyzing: (name, idx, total) => {
+      if (!jsonOutput) process.stdout.write(`  [${idx + 1}/${total}] ${name}...`);
+    },
+    onRepoAnalyzed: (analyzed) => {
+      if (!jsonOutput) {
+        const ports = [...analyzed.ports, ...analyzed.configPorts].map((p) => `${p.port}(${p.source})`).join(', ') || 'none';
+        console.log(` ${analyzed.classification} | ports: ${ports}`);
+      }
+    },
+  });
+
+  const services = result.analyzed.filter((a) => a.classification === 'service').length;
+  const infra = result.analyzed.filter((a) => a.classification === 'infra').length;
+  const libs = result.analyzed.filter((a) => a.classification === 'library').length;
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({
+      mode: 'local',
+      workspaceDir,
+      orgUrl: result.orgUrl,
+      repos: result.analyzed.map((a) => ({
+        name: a.name,
+        language: a.repoInfo.language,
+        classification: a.classification,
+        ports: [...a.ports, ...a.configPorts],
+        hasDev: a.hasDev,
+        hasStart: a.hasStart,
+        hasDockerCompose: a.hasDockerCompose,
+        cloneUrl: a.repoInfo.cloneUrl,
+      })),
+      dependencies: result.dependencies,
+      summary: {
+        total: result.analyzed.length,
+        services,
+        infra,
+        libraries: libs,
+        orgInferred: !!result.orgUrl,
+      },
+    }, null, 2));
+  } else {
+    console.log(`\nFound ${result.analyzed.length} repos: ${services} services, ${infra} infra, ${libs} libraries`);
+    console.log(`Dependencies: ${result.dependencies.length} detected`);
+    if (result.orgUrl) {
+      console.log(`GitHub org inferred: ${result.orgUrl.host}/${result.orgUrl.org}`);
+    }
+    console.log(`\nUse /orcha-init in Claude Code for agent-powered config generation.`);
+    console.log(`Or: orcha generate-config to write orcha.config.yaml from this analysis.`);
   }
 };
 
@@ -1413,17 +1483,28 @@ const main = async () => {
 
   switch (command) {
     case 'init': {
-      const orgUrl = positional[1];
-      if (!orgUrl) {
-        console.error('Usage: orcha init <org-url> [workspace-dir]');
-        process.exit(1);
+      const arg1 = positional[1];
+
+      if (!arg1) {
+        // No args: scan current directory as local workspace
+        await runInitLocal(process.cwd(), jsonOutput);
+        break;
       }
-      // If workspace-dir not provided, create ./<org-name>/ from the org URL
-      const orgName = parseOrgUrl(orgUrl).org;
-      const workspaceDir = positional[2]
-        ? path.resolve(positional[2])
-        : path.resolve(process.cwd(), orgName);
-      await runInit(orgUrl, workspaceDir, jsonOutput, includeAll);
+
+      // Detect if arg1 is a URL or a local path
+      const isUrl = arg1.includes('github.com') || arg1.includes('git.') || arg1.startsWith('http://') || arg1.startsWith('https://');
+
+      if (isUrl) {
+        // org URL mode: orcha init <org-url> [workspace-dir]
+        const orgName = parseOrgUrl(arg1).org;
+        const workspaceDir = positional[2]
+          ? path.resolve(positional[2])
+          : path.resolve(process.cwd(), orgName);
+        await runInit(arg1, workspaceDir, jsonOutput, includeAll);
+      } else {
+        // local path mode: orcha init <workspace-dir>
+        await runInitLocal(path.resolve(arg1), jsonOutput);
+      }
       break;
     }
 
