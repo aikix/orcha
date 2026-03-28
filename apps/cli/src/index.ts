@@ -12,6 +12,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import { c, icon, summaryLine, isBotCommit } from './format.js';
 import {
   parseOrgUrl,
   listOrgRepos,
@@ -70,29 +71,31 @@ Stack:
   logs <service> [lines]           Tail service logs
 
 Workspace:
-  list services                    List all registered services
-  list presets                     List stack presets
-  graph [preset|service]           Show dependency graph
-  doctor                           Check binaries and service health
-  inspect config <service>         Show resolved service configuration
-  verify stack                     Probe all service health checks
-  verify api [service]             Run API verification probes from config
-  verify flow [scenario]           Run multi-step flow scenarios from config
-  seed [fixture...]                Execute seed fixtures from config
+  list services                    List all registered services from config
+  list presets                     List stack presets (named service groups)
+  graph [preset|service]           Show dependency graph (which services depend on which)
+  doctor                           Check prerequisite binaries + service health
+  inspect config <service>         Show resolved config after profile merge
+  verify stack                     Health check all services (HTTP/TCP probes)
+  verify api [service]             Run API contract probes (status + response keys)
+  verify flow [scenario]           Run multi-step cross-service flow scenarios
+  seed [fixture...]                Insert test data via HTTP (with dependency ordering)
 
 Knowledge:
-  kb list [service]                List KB documents
-  kb status                        KB freshness per service
+  kb list [service]                List KB documents (markdown docs per service)
+  kb status                        Show KB freshness (last updated per service)
 
 Code Intelligence:
-  pr list [--since <window>]       List PRs across repos (default: 2w)
-  pr context <pr-url>              Full PR context (diff, comments, reviews)
-  delta scan [--since <window>]    Scan git commits across repos (default: 1w)
+  pr list [--since <window>]       List PRs across all repos via GitHub CLI (default: 2w)
+  pr context <pr-url>              Full PR context: diff, comments, reviews, files
+  delta scan [--since <window>]    Scan local git commits across repos (default: 1w)
 
 Flags:
   --profile <name>                 Profile for graph/up/inspect
   --all                            Include all repos (skip selection)
   --json                           Machine-readable JSON output
+  --brief                          Concise one-line summary (for agent display)
+  --no-color                       Disable colored output (also: NO_COLOR env)
   --help, -h                       Show this help
 
 Examples:
@@ -447,7 +450,7 @@ const probeHealth = async (url: string, expectedStatus?: number): Promise<{ ok: 
   }
 };
 
-const runDoctor = async (jsonOutput: boolean) => {
+const runDoctor = async (jsonOutput: boolean, briefOutput: boolean) => {
   const config = loadConfig();
   const onboard = config.onboard ?? { binaries: ['bun', 'docker', 'gh'] };
   const binaries = onboard.binaries ?? ['bun', 'docker', 'gh'];
@@ -480,23 +483,47 @@ const runDoctor = async (jsonOutput: boolean) => {
     serviceResults.push({ id: svc.id, kind: svc.kind, url: svc.localUrl, checks });
   }
 
+  // Compute summary stats
+  const binOk = binaryResults.filter((b) => b.ok).length;
+  const binTotal = binaryResults.length;
+  const svcHealthy = serviceResults.filter((s) => s.checks.length > 0 && s.checks.every((ch) => ch.ok)).length;
+  const svcDown = serviceResults.filter((s) => s.checks.length > 0 && !s.checks.every((ch) => ch.ok)).length;
+  const svcNoCheck = serviceResults.filter((s) => s.checks.length === 0).length;
+  const missingBins = binaryResults.filter((b) => !b.ok).map((b) => b.name);
+  const downSvcs = serviceResults.filter((s) => s.checks.length > 0 && !s.checks.every((ch) => ch.ok)).map((s) => s.id);
+
   if (jsonOutput) {
     console.log(JSON.stringify({ binaries: binaryResults, services: serviceResults }, null, 2));
+  } else if (briefOutput) {
+    const parts = [];
+    parts.push(binOk === binTotal ? `All ${binTotal} binaries OK` : `${binOk}/${binTotal} binaries OK (missing: ${missingBins.join(', ')})`);
+    if (svcHealthy > 0) parts.push(`${svcHealthy} services healthy`);
+    if (svcDown > 0) parts.push(`${downSvcs.join(', ')} down`);
+    if (svcNoCheck > 0) parts.push(`${svcNoCheck} no health checks`);
+    console.log(parts.join('. ') + '.');
   } else {
-    console.log(`\nBinaries:`);
+    // Summary verdict
+    console.log('\n' + summaryLine([
+      binOk === binTotal ? c.green(`${binOk}/${binTotal} binaries OK`) : c.red(`${binOk}/${binTotal} binaries OK`),
+      svcHealthy > 0 ? c.green(`${svcHealthy} healthy`) : '',
+      svcDown > 0 ? c.red(`${svcDown} down`) : '',
+      svcNoCheck > 0 ? c.dim(`${svcNoCheck} no checks`) : '',
+    ]));
+
+    console.log(`\n${c.bold('Binaries:')}`);
     for (const b of binaryResults) {
-      const icon = b.ok ? '✓' : '✗';
-      console.log(`  ${icon} ${b.name.padEnd(10)} ${b.version}`);
+      const i = b.ok ? icon.pass : icon.fail;
+      console.log(`  ${i} ${b.name.padEnd(10)} ${b.ok ? b.version : c.red(b.version)}`);
     }
 
-    console.log(`\nServices:`);
-    console.log(`  ${'SERVICE'.padEnd(32)} ${'STATE'.padEnd(10)} URL`);
-    console.log(`  ${''.padEnd(32, '-')} ${''.padEnd(10, '-')} ${''.padEnd(40, '-')}`);
+    console.log(`\n${c.bold('Services:')}`);
+    console.log(c.dim(`  ${'SERVICE'.padEnd(32)} ${'STATE'.padEnd(10)} URL`));
+    console.log(c.dim(`  ${''.padEnd(32, '-')} ${''.padEnd(10, '-')} ${''.padEnd(40, '-')}`));
     for (const svc of serviceResults) {
-      const allOk = svc.checks.length > 0 && svc.checks.every((c) => c.ok);
+      const allOk = svc.checks.length > 0 && svc.checks.every((ch) => ch.ok);
       const anyCheck = svc.checks.length > 0;
-      const state = !anyCheck ? 'n/a' : allOk ? 'READY' : 'STOPPED';
-      console.log(`  ${svc.id.padEnd(32)} ${state.padEnd(10)} ${svc.url}`);
+      const state = !anyCheck ? c.dim('n/a') : allOk ? c.green('READY') : c.red('STOPPED');
+      console.log(`  ${svc.id.padEnd(32)} ${state.padEnd(20)} ${svc.url}`);
     }
   }
 };
@@ -1111,18 +1138,36 @@ const runDown = async (serviceId: string | undefined, jsonOutput: boolean) => {
 // ---------------------------------------------------------------------------
 // status: Show running services
 // ---------------------------------------------------------------------------
-const runStatus = async (jsonOutput: boolean) => {
+const runStatus = async (jsonOutput: boolean, briefOutput: boolean) => {
   const statuses = await getStatus();
+
+  const ready = statuses.filter((s) => s.state === 'READY').length;
+  const running = statuses.filter((s) => s.state === 'RUNNING').length;
+  const stopped = statuses.filter((s) => s.state === 'STOPPED').length;
 
   if (jsonOutput) {
     console.log(JSON.stringify({ services: statuses }, null, 2));
+  } else if (briefOutput) {
+    const parts = [`${ready + running}/${statuses.length} running`];
+    if (ready > 0) parts.push(`${ready} ready`);
+    if (stopped > 0) parts.push(`${stopped} stopped`);
+    console.log(parts.join('. ') + '.');
   } else {
-    console.log(`\n  ${'SERVICE'.padEnd(32)} ${'STATE'.padEnd(8)} ${'PID'.padEnd(8)} ${'PROFILE'.padEnd(10)} URL`);
-    console.log(`  ${''.padEnd(32, '-')} ${''.padEnd(8, '-')} ${''.padEnd(8, '-')} ${''.padEnd(10, '-')} ${''.padEnd(30, '-')}`);
+    // Summary verdict
+    console.log('\n' + summaryLine([
+      ready > 0 ? c.green(`${ready} ready`) : '',
+      running > 0 ? c.yellow(`${running} running (no health check)`) : '',
+      stopped > 0 ? c.dim(`${stopped} stopped`) : '',
+    ]));
+
+    console.log('');
+    console.log(c.dim(`  ${'SERVICE'.padEnd(32)} ${'STATE'.padEnd(8)} ${'PID'.padEnd(8)} ${'PROFILE'.padEnd(10)} URL`));
+    console.log(c.dim(`  ${''.padEnd(32, '-')} ${''.padEnd(8, '-')} ${''.padEnd(8, '-')} ${''.padEnd(10, '-')} ${''.padEnd(30, '-')}`));
     for (const s of statuses) {
       const pidStr = s.pid ? String(s.pid) : '-';
       const profStr = s.profile ?? '-';
-      console.log(`  ${s.serviceId.padEnd(32)} ${s.state.padEnd(8)} ${pidStr.padEnd(8)} ${profStr.padEnd(10)} ${s.url}`);
+      const stateStr = s.state === 'READY' ? c.green(s.state) : s.state === 'RUNNING' ? c.yellow(s.state) : c.dim(s.state);
+      console.log(`  ${s.serviceId.padEnd(32)} ${stateStr.padEnd(18)} ${pidStr.padEnd(8)} ${profStr.padEnd(10)} ${s.url}`);
     }
   }
 };
@@ -1258,7 +1303,7 @@ const runPrContext = async (prUrlString: string, jsonOutput: boolean) => {
 type CommitEntry = { hash: string; subject: string; author: string; date: string };
 type RepoCommits = { repo: string; commits: CommitEntry[]; insertions: number; deletions: number };
 
-const runDeltaScan = async (since: string, jsonOutput: boolean) => {
+const runDeltaScan = async (since: string, jsonOutput: boolean, briefOutput: boolean) => {
   const services = listServiceDefinitions(true);
 
   // Build --since arg for git log
@@ -1318,18 +1363,49 @@ const runDeltaScan = async (since: string, jsonOutput: boolean) => {
   results.sort((a, b) => b.commits.length - a.commits.length);
   const totalCommits = results.reduce((sum, r) => sum + r.commits.length, 0);
 
+  // Separate bot vs human commits
+  const totalBot = results.reduce((sum, r) => sum + r.commits.filter((cm) => isBotCommit(cm.author, cm.subject)).length, 0);
+  const totalHuman = totalCommits - totalBot;
+  const activeRepos = results.filter((r) => r.commits.length > 0);
+  const quietRepos = results.filter((r) => r.commits.length === 0);
+  const mostActive = activeRepos.length > 0 ? activeRepos[0] : null;
+
   if (jsonOutput) {
-    console.log(JSON.stringify({ since, reposScanned: repos.length, totalCommits, repos: results }, null, 2));
+    console.log(JSON.stringify({ since, reposScanned: repos.length, totalCommits, totalBot, totalHuman, repos: results }, null, 2));
+  } else if (briefOutput) {
+    const parts = [`${totalHuman} commits across ${activeRepos.length} repos (since ${since})`];
+    if (mostActive) parts.push(`most active: ${mostActive.repo} (${mostActive.commits.length})`);
+    if (totalBot > 0) parts.push(`${totalBot} bot commits`);
+    if (quietRepos.length > 0) parts.push(`${quietRepos.length} quiet`);
+    console.log(parts.join('. ') + '.');
   } else {
-    console.log(`\nDelta Scan (since ${since}) — ${totalCommits} commits across ${repos.length} repos\n`);
-    console.log(`  ${'REPO'.padEnd(28)} ${'COMMITS'.padEnd(9)} ${'LINES'.padEnd(14)} LATEST`);
-    console.log(`  ${''.padEnd(28, '-')} ${''.padEnd(9, '-')} ${''.padEnd(14, '-')} ${''.padEnd(40, '-')}`);
-    for (const r of results) {
-      const latest = r.commits.length > 0
-        ? `${r.commits[0].subject.slice(0, 38)} (${r.commits[0].author})`
-        : 'none';
-      const lines = r.commits.length > 0 ? `+${r.insertions}/-${r.deletions}` : '';
-      console.log(`  ${r.repo.padEnd(28)} ${String(r.commits.length).padEnd(9)} ${lines.padEnd(14)} ${latest}`);
+    // Summary verdict
+    console.log('\n' + summaryLine([
+      c.bold(`${totalCommits} commits across ${activeRepos.length} repos`) + c.dim(` (since ${since})`),
+      mostActive ? `Most active: ${c.cyan(mostActive.repo)} (${mostActive.commits.length})` : '',
+      totalBot > 0 ? c.dim(`${totalBot} bot`) : '',
+      quietRepos.length > 0 ? c.dim(`${quietRepos.length} quiet`) : '',
+    ]));
+
+    // Human commits table
+    console.log('');
+    console.log(c.dim(`  ${'REPO'.padEnd(28)} ${'COMMITS'.padEnd(9)} ${'LINES'.padEnd(14)} LATEST`));
+    console.log(c.dim(`  ${''.padEnd(28, '-')} ${''.padEnd(9, '-')} ${''.padEnd(14, '-')} ${''.padEnd(40, '-')}`));
+
+    for (const r of activeRepos) {
+      const humanCommits = r.commits.filter((cm) => !isBotCommit(cm.author, cm.subject));
+      const botCount = r.commits.length - humanCommits.length;
+      const latestHuman = humanCommits.length > 0 ? humanCommits[0] : null;
+      const latest = latestHuman
+        ? `${latestHuman.subject.slice(0, 38)} ${c.dim(`(${latestHuman.author})`)}`
+        : c.dim(`${r.commits[0].subject.slice(0, 38)} (bot)`);
+      const lines = `+${r.insertions}/-${r.deletions}`;
+      const commitStr = botCount > 0 ? `${humanCommits.length}+${c.dim(`${botCount}bot`)}` : String(r.commits.length);
+      console.log(`  ${r.repo.padEnd(28)} ${commitStr.padEnd(20)} ${lines.padEnd(14)} ${latest}`);
+    }
+
+    if (quietRepos.length > 0) {
+      console.log(c.dim(`\n  ${quietRepos.length} repos with no activity: ${quietRepos.map((r) => r.repo).join(', ')}`));
     }
   }
 };
@@ -1337,7 +1413,7 @@ const runDeltaScan = async (since: string, jsonOutput: boolean) => {
 // ---------------------------------------------------------------------------
 // verify stack: Probe all service health checks
 // ---------------------------------------------------------------------------
-const runVerifyStack = async (jsonOutput: boolean) => {
+const runVerifyStack = async (jsonOutput: boolean, briefOutput: boolean) => {
   const services = listAllServiceDefinitions();
 
   type CheckResult = { name: string; url: string; ok: boolean; detail: string };
@@ -1363,7 +1439,7 @@ const runVerifyStack = async (jsonOutput: boolean) => {
       };
     }));
 
-    const passed = checks.filter((c) => c.ok).length;
+    const passed = checks.filter((ch) => ch.ok).length;
     results.push({ id: svc.id, kind: svc.kind, url: svc.localUrl, passed, total: checks.length, checks });
   }));
 
@@ -1376,22 +1452,41 @@ const runVerifyStack = async (jsonOutput: boolean) => {
 
   const totalPassed = results.reduce((sum, r) => sum + r.passed, 0);
   const totalChecks = results.reduce((sum, r) => sum + r.total, 0);
+  const svcHealthy = results.filter((r) => r.total > 0 && r.passed === r.total).length;
+  const svcDown = results.filter((r) => r.total > 0 && r.passed < r.total).length;
+  const svcNoCheck = results.filter((r) => r.total === 0).length;
+  const downNames = results.filter((r) => r.total > 0 && r.passed < r.total).map((r) => r.id);
 
   if (jsonOutput) {
     console.log(JSON.stringify({ summary: { passed: totalPassed, total: totalChecks }, services: results }, null, 2));
+  } else if (briefOutput) {
+    const parts = [`Stack: ${totalPassed}/${totalChecks} checks passed`];
+    if (svcHealthy > 0) parts.push(`${svcHealthy} healthy`);
+    if (svcDown > 0) parts.push(`${downNames.join(', ')} down`);
+    console.log(parts.join('. ') + '.');
   } else {
-    console.log(`\nStack Verification: ${totalPassed}/${totalChecks} checks passed\n`);
-    console.log(`  ${'SERVICE'.padEnd(32)} ${'CHECKS'.padEnd(8)} ${'STATUS'.padEnd(10)} DETAIL`);
-    console.log(`  ${''.padEnd(32, '-')} ${''.padEnd(8, '-')} ${''.padEnd(10, '-')} ${''.padEnd(30, '-')}`);
+    // Summary verdict
+    const allPass = totalPassed === totalChecks;
+    console.log('\n' + summaryLine([
+      allPass ? c.green(`${totalPassed}/${totalChecks} checks passed`) : c.red(`${totalPassed}/${totalChecks} checks passed`),
+      svcHealthy > 0 ? c.green(`${svcHealthy} healthy`) : '',
+      svcDown > 0 ? c.red(`${svcDown} down`) : '',
+      svcNoCheck > 0 ? c.dim(`${svcNoCheck} no checks`) : '',
+    ]));
+
+    console.log('');
+    console.log(c.dim(`  ${'SERVICE'.padEnd(32)} ${'CHECKS'.padEnd(8)} ${'STATUS'.padEnd(10)} DETAIL`));
+    console.log(c.dim(`  ${''.padEnd(32, '-')} ${''.padEnd(8, '-')} ${''.padEnd(10, '-')} ${''.padEnd(30, '-')}`));
     for (const svc of results) {
       if (svc.total === 0) {
-        console.log(`  ${svc.id.padEnd(32)} ${'n/a'.padEnd(8)} ${''.padEnd(10)} no health checks`);
+        console.log(`  ${c.dim(svc.id.padEnd(32))} ${c.dim('n/a'.padEnd(8))} ${''.padEnd(10)} ${c.dim('no health checks')}`);
         continue;
       }
-      const status = svc.passed === svc.total ? 'PASS' : 'FAIL';
+      const pass = svc.passed === svc.total;
+      const status = pass ? c.green('PASS') : c.red('FAIL');
       const checkStr = `${svc.passed}/${svc.total}`;
-      const detail = svc.checks.map((c) => `${c.name}: ${c.detail}`).join(', ');
-      console.log(`  ${svc.id.padEnd(32)} ${checkStr.padEnd(8)} ${status.padEnd(10)} ${detail}`);
+      const detail = svc.checks.map((ch) => `${ch.name}: ${ch.ok ? c.green(ch.detail) : c.red(ch.detail)}`).join(', ');
+      console.log(`  ${svc.id.padEnd(32)} ${checkStr.padEnd(8)} ${status.padEnd(20)} ${detail}`);
     }
   }
 };
@@ -1466,13 +1561,14 @@ const main = async () => {
 
   const command = args[0];
   const jsonOutput = args.includes('--json');
+  const briefOutput = args.includes('--brief');
   const includeAll = args.includes('--all');
 
   // Filter out flags and their values to get positional args
   const positional: string[] = [];
   for (let i = 0; i < args.length; i++) {
     if (args[i].startsWith('--')) {
-      if (['--workspace', '--json', '--all', '--help', '--profile', '--since'].includes(args[i])) {
+      if (['--workspace', '--json', '--all', '--help', '--profile', '--since', '--brief', '--no-color'].includes(args[i])) {
         // flags that take a value — skip next arg too
         if (args[i] === '--workspace' || args[i] === '--profile' || args[i] === '--since') i++;
       }
@@ -1580,7 +1676,7 @@ const main = async () => {
     }
 
     case 'status': {
-      await runStatus(jsonOutput);
+      await runStatus(jsonOutput, briefOutput);
       break;
     }
 
@@ -1597,7 +1693,7 @@ const main = async () => {
       if (sub === 'scan') {
         const sinceIdx = args.indexOf('--since');
         const since = sinceIdx >= 0 ? args[sinceIdx + 1] : '1w';
-        await runDeltaScan(since, jsonOutput);
+        await runDeltaScan(since, jsonOutput, briefOutput);
       } else {
         console.error('Usage: orcha delta scan [--since <window>]');
         process.exit(1);
@@ -1625,7 +1721,7 @@ const main = async () => {
     case 'verify': {
       const sub = positional[1];
       if (sub === 'stack') {
-        await runVerifyStack(jsonOutput);
+        await runVerifyStack(jsonOutput, briefOutput);
       } else if (sub === 'api') {
         const svcId = positional[2];
         await runVerifyApi(svcId, jsonOutput);
@@ -1657,7 +1753,7 @@ const main = async () => {
     }
 
     case 'doctor': {
-      await runDoctor(jsonOutput);
+      await runDoctor(jsonOutput, briefOutput);
       break;
     }
 
