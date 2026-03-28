@@ -159,7 +159,7 @@ orcha (CLI framework)          Team Workspace
 | `orcha scan <org-url> --all` | Shallow clone + analyze repos |
 | `orcha clone <org-url> [repos...]` | Clone repos into workspace |
 
-### Stack Management (planned)
+### Stack Management
 | Command | Action |
 |---|---|
 | `orcha up [preset\|service] [--profile]` | Start services with dependency resolution |
@@ -169,15 +169,13 @@ orcha (CLI framework)          Team Workspace
 | `orcha graph [preset]` | Show dependency graph |
 | `orcha logs [service]` | Tail service logs |
 
-### Verification (planned)
-| Command | Action |
+### Verification| Command | Action |
 |---|---|
 | `orcha verify stack` | Health check all running services |
 | `orcha verify api [service]` | Verify API contracts |
 | `orcha seed [fixture...]` | Seed test data |
 
-### Code Intelligence (planned)
-| Command | Action |
+### Code Intelligence| Command | Action |
 |---|---|
 | `orcha pr list --since <window>` | PRs across repos |
 | `orcha pr context <url>` | Full PR context |
@@ -188,11 +186,14 @@ orcha (CLI framework)          Team Workspace
 
 | Skill | Purpose |
 |---|---|
-| `/orcha-init <org-url> [dir]` | Agent-powered workspace init with source code analysis |
-| `/orcha-check` | Health assessment (planned) |
-| `/orcha-sync` | Refresh agent knowledge (planned) |
-| `/orcha-pr-review <url>` | AI-powered PR review (planned) |
-| `/orcha-debug <service>` | Deep service diagnostic (planned) |
+| `/orcha-init [org-url \| dir]` | Agent-powered workspace init (org URL or local workspace) |
+| `/orcha-check` | Health assessment: binaries, services, dependency chains |
+| `/orcha-sync` | Refresh agent knowledge: commits, PRs, KB freshness |
+| `/orcha-pr-review <url>` | AI-powered PR review with blast radius analysis |
+| `/orcha-debug <service>` | Deep service diagnostic: root cause + fix |
+| `/orcha-weekly` | Weekly summary with architecture evolution proposals |
+| `/orcha-kb-baseline` | Generate baseline KB docs from source code analysis |
+| `/orcha-kb-update <service>` | Update KB from recent merged PRs |
 
 ## Packages
 
@@ -200,9 +201,8 @@ orcha (CLI framework)          Team Workspace
 |---|---|
 | `@orcha/service-definitions` | TypeScript types (ServiceDefinition, OrchaConfig, etc.) |
 | `@orcha/config-loader` | Reads `orcha.config.yaml`, resolves profiles, interpolates variables |
-| `@orcha/discovery` | Org scanning, repo analysis, dependency detection, config generation |
-| `@orcha/orchestrator` | Service lifecycle management (planned) |
-| `@orcha/verifier` | Health checks, API contracts, flow scenarios (planned) |
+| `@orcha/discovery` | Org scanning, local workspace scanning, repo analysis, dependency detection, config generation |
+| `@orcha/orchestrator` | Service lifecycle: start/stop, dependency resolution, health gating, process state |
 
 ## Development
 
@@ -216,14 +216,14 @@ bun link                        # Install globally from source
 
 ## Status
 
-Orcha is in early development. The config-loader and discovery packages are functional with 35+ tests. Stack management and verification are planned.
+Orcha is a feature-complete alpha. All core features are implemented and working.
 
 | Area | Status |
 |---|---|
-| Config loading | ✅ Working (35 tests) |
-| Discovery / init | ✅ Working (tested against live org) |
-| Agent skill: /orcha-init | ✅ Working |
-| Stack management (up/down) | 🔲 Planned |
-| Verification | 🔲 Planned |
-| PR / delta tooling | 🔲 Planned |
-| Agent skills (check/sync/review) | 🔲 Planned |
+| Config loading | ✅ Working (35+ tests) |
+| Discovery / init | ✅ Working (org URL + local workspace modes) |
+| Stack management (up/down/status/logs) | ✅ Working |
+| Verification (stack/api/flow/seed) | ✅ Working |
+| PR / delta tooling | ✅ Working |
+| KB management | ✅ Working |
+| Agent skills (8 total) | ✅ Working (init, check, sync, pr-review, debug, weekly, kb-baseline, kb-update) |

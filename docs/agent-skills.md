@@ -40,21 +40,26 @@ Instructions for the agent...
 
 ## Available Skills
 
-### `/orcha-init <org-url> [workspace-dir]`
+### `/orcha-init [org-url | workspace-dir]`
 
-**What it does:** Full workspace initialization from a GitHub org URL.
+**What it does:** Full workspace initialization from a GitHub org URL or an existing local workspace.
 
 **Why agent-first matters:** A regex scanner gets ports wrong (Redis 6379 for an API service), misses runtime dependencies, and can't infer profiles. The agent reads `config/default.cjs`, server entry points, and docker-compose files to get it right.
 
-**Flow:**
+**Two modes:**
+
+**Org URL mode** (new team member):
 1. `orcha init <url> [dir] --json` → structured diff (present/missing/local-only)
 2. Agent presents diff, asks user which missing repos to clone
 3. `orcha clone <url> <repos> --workspace <dir>` → clone selected repos
-4. Agent reads source code of each service repo
-5. Agent generates `orcha.config.yaml` with accurate ports, health paths, deps, profiles
-6. Agent validates: no broken deps, no port conflicts
+4. Agent reads source code, generates `orcha.config.yaml`
 
-### `/orcha-check` (planned)
+**Local mode** (existing developer):
+1. `orcha init <dir> --json` → scans local repos, infers org from git remotes
+2. Agent reads source code of each service repo
+3. Agent generates `orcha.config.yaml` with accurate ports, health paths, deps, profiles
+
+### `/orcha-check`
 
 **What it does:** One-shot health assessment of the workspace.
 
@@ -64,7 +69,7 @@ Instructions for the agent...
 3. `orcha verify stack --json` → health check results
 4. Agent summarizes: what's healthy, what's down, what needs attention
 
-### `/orcha-sync` (planned)
+### `/orcha-sync`
 
 **What it does:** Refresh agent knowledge from the workspace.
 
@@ -74,7 +79,7 @@ Instructions for the agent...
 3. `orcha pr list --since 1w --json` → open/merged PRs
 4. Agent summarizes: what changed, what's in flight, what needs review
 
-### `/orcha-pr-review <url>` (planned)
+### `/orcha-pr-review <url>`
 
 **What it does:** AI-powered PR review with full context.
 
@@ -84,7 +89,7 @@ Instructions for the agent...
 3. Agent analyzes: correctness, security, tests, blast radius
 4. Agent delivers verdict: APPROVE / REQUEST CHANGES with specific feedback
 
-### `/orcha-debug <service>` (planned)
+### `/orcha-debug <service>`
 
 **What it does:** Deep diagnostic when a service is failing.
 
