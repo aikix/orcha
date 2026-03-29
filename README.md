@@ -166,6 +166,7 @@ orcha (CLI framework)          Team Workspace
 | `orcha down [service]` | Stop services |
 | `orcha status` | Show running services |
 | `orcha doctor` | Check binaries and health |
+| `orcha impact <service>` | Blast radius analysis |
 | `orcha graph [preset]` | Show dependency graph |
 | `orcha logs [service]` | Tail service logs |
 
@@ -194,6 +195,8 @@ orcha (CLI framework)          Team Workspace
 | `/orcha-weekly` | Weekly summary with architecture evolution proposals |
 | `/orcha-kb-baseline` | Generate baseline KB docs from source code analysis |
 | `/orcha-kb-update <service>` | Update KB from recent merged PRs |
+| `/orcha-onboard [org-url \| dir]` | Full new developer onboarding (prereqs → init → start → seed → orient) |
+| `/orcha-impact <service>` | Blast radius: what breaks if this service changes |
 
 ## Packages
 
@@ -226,4 +229,4 @@ Orcha is a feature-complete alpha. All core features are implemented and working
 | Verification (stack/api/flow/seed) | ✅ Working |
 | PR / delta tooling | ✅ Working |
 | KB management | ✅ Working |
-| Agent skills (8 total) | ✅ Working (init, check, sync, pr-review, debug, weekly, kb-baseline, kb-update) |
+| Agent skills (10 total) | ✅ Working (init, check, sync, pr-review, debug, weekly, kb-baseline, kb-update, onboard, impact) |
