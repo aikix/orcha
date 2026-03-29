@@ -144,6 +144,169 @@ const extractConfigPorts = (repoDir: string): DetectedPort[] => {
   return ports;
 };
 
+// ---------------------------------------------------------------------------
+// Python detection
+// ---------------------------------------------------------------------------
+
+const extractPythonPorts = (repoDir: string): DetectedPort[] => {
+  const ports: DetectedPort[] = [];
+  const candidates = ['app.py', 'main.py', 'src/main.py', 'src/app.py', 'server.py', 'run.py', 'manage.py'];
+
+  for (const name of candidates) {
+    const filePath = path.join(repoDir, name);
+    if (!existsSync(filePath)) continue;
+    const content = readFileSync(filePath, 'utf8');
+
+    // Flask: app.run(port=5000) or app.run(host="0.0.0.0", port=8000)
+    const flaskMatch = content.match(/\.run\([^)]*port\s*=\s*(\d{4,5})/);
+    if (flaskMatch) ports.push({ port: parseInt(flaskMatch[1], 10), source: `${name} (Flask)` });
+
+    // FastAPI/Uvicorn: uvicorn.run(..., port=8000)
+    const uvicornMatch = content.match(/uvicorn\.run\([^)]*port\s*=\s*(\d{4,5})/);
+    if (uvicornMatch) ports.push({ port: parseInt(uvicornMatch[1], 10), source: `${name} (Uvicorn)` });
+
+    // Generic: PORT = 8000 or port = int(os.environ.get("PORT", "8000"))
+    const envPortMatch = content.match(/["']PORT["']\s*,\s*["'](\d{4,5})["']/);
+    if (envPortMatch) ports.push({ port: parseInt(envPortMatch[1], 10), source: `${name} (env default)` });
+  }
+
+  // pyproject.toml: [tool.uvicorn] port = 8000
+  const pyprojectPath = path.join(repoDir, 'pyproject.toml');
+  if (existsSync(pyprojectPath)) {
+    const content = readFileSync(pyprojectPath, 'utf8');
+    const portMatch = content.match(/port\s*=\s*(\d{4,5})/);
+    if (portMatch) ports.push({ port: parseInt(portMatch[1], 10), source: 'pyproject.toml' });
+  }
+
+  return ports;
+};
+
+const readPythonDeps = (repoDir: string): string[] => {
+  const deps: string[] = [];
+
+  const reqPath = path.join(repoDir, 'requirements.txt');
+  if (existsSync(reqPath)) {
+    const content = readFileSync(reqPath, 'utf8');
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('#')) {
+        deps.push(trimmed.split(/[=<>!~\[]/)[0].trim());
+      }
+    }
+  }
+
+  const pyprojectPath = path.join(repoDir, 'pyproject.toml');
+  if (existsSync(pyprojectPath)) {
+    const content = readFileSync(pyprojectPath, 'utf8');
+    const depsMatch = content.match(/dependencies\s*=\s*\[([\s\S]*?)\]/);
+    if (depsMatch) {
+      const block = depsMatch[1];
+      const depRegex = /["']([a-zA-Z0-9_-]+)/g;
+      let m;
+      while ((m = depRegex.exec(block)) !== null) {
+        deps.push(m[1]);
+      }
+    }
+  }
+
+  return deps;
+};
+
+const detectPythonScripts = (repoDir: string): DetectedScript[] => {
+  const scripts: DetectedScript[] = [];
+
+  if (existsSync(path.join(repoDir, 'manage.py'))) {
+    scripts.push({ name: 'dev', command: 'python manage.py runserver' });
+  } else if (existsSync(path.join(repoDir, 'app.py')) || existsSync(path.join(repoDir, 'main.py'))) {
+    const entry = existsSync(path.join(repoDir, 'app.py')) ? 'app.py' : 'main.py';
+    scripts.push({ name: 'dev', command: `python ${entry}` });
+  }
+
+  const makefilePath = path.join(repoDir, 'Makefile');
+  if (existsSync(makefilePath)) {
+    const content = readFileSync(makefilePath, 'utf8');
+    if (/^(dev|run|serve):/m.test(content)) {
+      scripts.push({ name: 'dev', command: 'make dev' });
+    }
+  }
+
+  return scripts;
+};
+
+// ---------------------------------------------------------------------------
+// Go detection
+// ---------------------------------------------------------------------------
+
+const extractGoPorts = (repoDir: string): DetectedPort[] => {
+  const ports: DetectedPort[] = [];
+  const candidates = ['main.go', 'cmd/server/main.go', 'cmd/main.go', 'server.go'];
+
+  for (const name of candidates) {
+    const filePath = path.join(repoDir, name);
+    if (!existsSync(filePath)) continue;
+    const content = readFileSync(filePath, 'utf8');
+
+    // http.ListenAndServe(":8080", ...)
+    const listenMatch = content.match(/ListenAndServe\s*\(\s*["']:(\d{4,5})["']/);
+    if (listenMatch) ports.push({ port: parseInt(listenMatch[1], 10), source: `${name} (http.ListenAndServe)` });
+
+    // gin: r.Run(":8080")
+    const ginMatch = content.match(/\.Run\s*\(\s*["']:(\d{4,5})["']/);
+    if (ginMatch) ports.push({ port: parseInt(ginMatch[1], 10), source: `${name} (gin)` });
+
+    // echo: e.Start(":8080")
+    const echoMatch = content.match(/\.Start\s*\(\s*["']:(\d{4,5})["']/);
+    if (echoMatch) ports.push({ port: parseInt(echoMatch[1], 10), source: `${name} (echo)` });
+
+    // fiber: app.Listen(":3000")
+    const fiberMatch = content.match(/\.Listen\s*\(\s*["']:(\d{4,5})["']/);
+    if (fiberMatch) ports.push({ port: parseInt(fiberMatch[1], 10), source: `${name} (fiber)` });
+  }
+
+  return ports;
+};
+
+const readGoDeps = (repoDir: string): string[] => {
+  const deps: string[] = [];
+  const goModPath = path.join(repoDir, 'go.mod');
+  if (!existsSync(goModPath)) return deps;
+
+  const content = readFileSync(goModPath, 'utf8');
+  const requireMatch = content.match(/require\s*\(([\s\S]*?)\)/);
+  if (requireMatch) {
+    for (const line of requireMatch[1].split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('//')) {
+        deps.push(trimmed.split(/\s+/)[0]);
+      }
+    }
+  }
+  return deps;
+};
+
+const detectGoScripts = (repoDir: string): DetectedScript[] => {
+  const scripts: DetectedScript[] = [];
+
+  if (existsSync(path.join(repoDir, 'main.go')) || existsSync(path.join(repoDir, 'cmd'))) {
+    scripts.push({ name: 'dev', command: 'go run .' });
+    scripts.push({ name: 'start', command: 'go run .' });
+  }
+
+  const makefilePath = path.join(repoDir, 'Makefile');
+  if (existsSync(makefilePath)) {
+    const content = readFileSync(makefilePath, 'utf8');
+    if (/^(dev|run|serve):/m.test(content)) {
+      scripts.push({ name: 'dev', command: 'make dev' });
+    }
+  }
+
+  return scripts;
+};
+
+// ---------------------------------------------------------------------------
+// Environment variable hints
+// ---------------------------------------------------------------------------
+
 const extractEnvVarHints = (repoDir: string): string[] => {
   const envFiles = ['.env.example', '.env.template', '.env.sample'];
   const hints: string[] = [];
@@ -171,11 +334,17 @@ const classify = (
   hasDockerfile: boolean,
   hasDockerCompose: boolean,
   dockerComposeServices: string[],
+  hasPython: boolean,
+  hasGo: boolean,
+  extraScripts: DetectedScript[],
 ): ServiceClassification => {
-  if (hasDockerCompose && dockerComposeServices.length > 0 && !pkg?.scripts?.start && !pkg?.scripts?.dev) {
+  if (hasDockerCompose && dockerComposeServices.length > 0 && !pkg?.scripts?.start && !pkg?.scripts?.dev && !hasPython && !hasGo) {
     return 'infra';
   }
   if (pkg?.scripts?.start || pkg?.scripts?.dev || pkg?.scripts?.['start:dev']) {
+    return 'service';
+  }
+  if (hasPython || hasGo || extraScripts.length > 0) {
     return 'service';
   }
   return 'library';
@@ -201,21 +370,39 @@ export const analyzeRepo = (repoDir: string, repoInfo: RepoInfo): AnalyzedRepo =
   const configPorts = extractConfigPorts(repoDir);
   const envVarHints = extractEnvVarHints(repoDir);
 
-  const allDeps = { ...pkg?.dependencies, ...pkg?.devDependencies };
+  // Python detection
+  const hasPython = existsSync(path.join(repoDir, 'pyproject.toml'))
+    || existsSync(path.join(repoDir, 'setup.py'))
+    || existsSync(path.join(repoDir, 'requirements.txt'));
+  if (hasPython) {
+    configPorts.push(...extractPythonPorts(repoDir));
+    scripts.push(...detectPythonScripts(repoDir));
+  }
+  const pythonDeps = hasPython ? readPythonDeps(repoDir) : [];
+
+  // Go detection
+  const hasGo = existsSync(path.join(repoDir, 'go.mod'));
+  if (hasGo) {
+    configPorts.push(...extractGoPorts(repoDir));
+    scripts.push(...detectGoScripts(repoDir));
+  }
+  const goDeps = hasGo ? readGoDeps(repoDir) : [];
+
+  const npmDeps = { ...pkg?.dependencies, ...pkg?.devDependencies };
 
   return {
     name: repoInfo.name,
     repoInfo,
-    classification: classify(pkg, hasDockerfile, hasDockerCompose, dockerCompose.services),
+    classification: classify(pkg, hasDockerfile, hasDockerCompose, dockerCompose.services, hasPython, hasGo, scripts),
     ports: [...dockerfilePorts, ...dockerCompose.ports],
     scripts,
-    hasDev: !!(pkg?.scripts?.dev || pkg?.scripts?.['start:dev']),
-    hasStart: !!pkg?.scripts?.start,
-    hasTest: !!pkg?.scripts?.test,
+    hasDev: !!(pkg?.scripts?.dev || pkg?.scripts?.['start:dev'] || scripts.some((s) => s.name === 'dev')),
+    hasStart: !!(pkg?.scripts?.start || scripts.some((s) => s.name === 'start')),
+    hasTest: !!(pkg?.scripts?.test),
     hasDockerfile,
     hasDockerCompose,
     dockerComposeServices: dockerCompose.services,
-    dependencies: Object.keys(allDeps),
+    dependencies: [...Object.keys(npmDeps), ...pythonDeps, ...goDeps],
     envVarHints,
     configPorts,
   };

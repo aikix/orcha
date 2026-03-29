@@ -23,15 +23,40 @@ type ServiceEntry = {
  * Determine the best dev command for a service.
  */
 const getDevCommand = (repo: AnalyzedRepo): { bin: string; args: string[] } => {
-  if (repo.scripts.find((s) => s.name === 'dev')) {
+  // Node.js (package.json scripts) — check in specificity order
+  const hasNpmScript = (name: string) => repo.scripts.find((s) => s.name === name);
+  if (hasNpmScript('dev')) {
     return { bin: 'npm', args: ['run', 'dev'] };
   }
-  if (repo.scripts.find((s) => s.name === 'start:dev')) {
+  if (hasNpmScript('start:dev')) {
     return { bin: 'npm', args: ['run', 'start:dev'] };
   }
-  if (repo.scripts.find((s) => s.name === 'start-dev')) {
+  if (hasNpmScript('start-dev')) {
     return { bin: 'npm', args: ['run', 'start-dev'] };
   }
+  if (hasNpmScript('start')) {
+    return { bin: 'npm', args: ['start'] };
+  }
+
+  // Python
+  const pythonDev = repo.scripts.find((s) => s.command.startsWith('python') || s.command.startsWith('make'));
+  if (pythonDev) {
+    const parts = pythonDev.command.split(/\s+/);
+    return { bin: parts[0], args: parts.slice(1) };
+  }
+
+  // Go
+  const goDev = repo.scripts.find((s) => s.command.startsWith('go run'));
+  if (goDev) {
+    return { bin: 'go', args: ['run', '.'] };
+  }
+
+  // Makefile fallback
+  const makeDev = repo.scripts.find((s) => s.command === 'make dev');
+  if (makeDev) {
+    return { bin: 'make', args: ['dev'] };
+  }
+
   return { bin: 'npm', args: ['start'] };
 };
 
