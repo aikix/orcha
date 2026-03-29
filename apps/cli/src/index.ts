@@ -74,6 +74,7 @@ Workspace:
   list services                    List all registered services from config
   list presets                     List stack presets (named service groups)
   graph [preset|service]           Show dependency graph (which services depend on which)
+  impact <service>                 Blast radius: what breaks if this service goes down
   doctor                           Check prerequisite binaries + service health
   inspect config <service>         Show resolved config after profile merge
   verify stack                     Health check all services (HTTP/TCP probes)
@@ -589,6 +590,108 @@ const runGraph = (target: string, profile: string | undefined, jsonOutput: boole
       const deps = node.dependencies.length > 0 ? node.dependencies.join(', ') : 'none';
       const refs = node.referenceDeps.length > 0 ? ` + ${node.referenceDeps.map((r) => `${r} (ref)`).join(', ')}` : '';
       console.log(`  ${node.id.padEnd(nameWidth)} ${deps}${refs}`);
+    }
+  }
+};
+
+// ---------------------------------------------------------------------------
+// impact: Blast radius analysis for a service
+// ---------------------------------------------------------------------------
+const runImpact = (serviceId: string, profile: string | undefined, jsonOutput: boolean) => {
+  const allServices = listAllServiceDefinitions();
+  const target = getServiceDefinition(serviceId);
+
+  // Find direct dependents (services that list this service in their dependencies)
+  const directDependents = allServices.filter((svc) =>
+    svc.dependencies.includes(serviceId) || (svc.referenceDeps ?? []).includes(serviceId),
+  );
+
+  // Find transitive dependents (services that depend on direct dependents, recursively)
+  const allDependents = new Set<string>(directDependents.map((s) => s.id));
+  let frontier = directDependents.map((s) => s.id);
+  while (frontier.length > 0) {
+    const nextFrontier: string[] = [];
+    for (const depId of frontier) {
+      const transitive = allServices.filter((svc) =>
+        svc.dependencies.includes(depId) && !allDependents.has(svc.id),
+      );
+      for (const t of transitive) {
+        allDependents.add(t.id);
+        nextFrontier.push(t.id);
+      }
+    }
+    frontier = nextFrontier;
+  }
+
+  // Find affected verification probes
+  const affectedProbes = allServices
+    .filter((svc) => svc.id === serviceId || allDependents.has(svc.id))
+    .flatMap((svc) => svc.verification.api.map((p) => ({ service: svc.id, probe: p.id, label: p.label })));
+
+  // Find affected flow scenarios
+  const flows = listFlowScenarios();
+  const affectedFlows = flows.filter((f) =>
+    f.requiredServices.includes(serviceId) ||
+    f.requiredServices.some((rs) => allDependents.has(rs)),
+  );
+
+  const transitiveOnly = [...allDependents].filter((id) => !directDependents.some((d) => d.id === id));
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({
+      service: serviceId,
+      label: target.label,
+      kind: target.kind,
+      directDependents: directDependents.map((s) => ({ id: s.id, label: s.label, kind: s.kind })),
+      transitiveDependents: transitiveOnly.map((id) => {
+        const svc = getServiceDefinition(id);
+        return { id: svc.id, label: svc.label, kind: svc.kind };
+      }),
+      affectedProbes,
+      affectedFlows: affectedFlows.map((f) => ({ id: f.id, label: f.label })),
+      totalBlastRadius: allDependents.size,
+    }, null, 2));
+  } else {
+    console.log(`\n${c.bold('Impact Analysis:')} ${target.label} (${serviceId})`);
+    console.log(summaryLine([
+      c.yellow(`${allDependents.size} services affected`),
+      `${directDependents.length} direct`,
+      `${transitiveOnly.length} transitive`,
+      affectedProbes.length > 0 ? `${affectedProbes.length} probes` : '',
+      affectedFlows.length > 0 ? `${affectedFlows.length} flows` : '',
+    ]));
+
+    if (directDependents.length > 0) {
+      console.log(`\n${c.bold('Direct dependents')} (services that depend on ${serviceId}):`);
+      for (const dep of directDependents) {
+        console.log(`  ${icon.warn} ${dep.id} ${c.dim(`(${dep.kind})`)}`);
+      }
+    }
+
+    if (transitiveOnly.length > 0) {
+      console.log(`\n${c.bold('Transitive dependents')} (affected through dependency chain):`);
+      for (const id of transitiveOnly) {
+        const svc = getServiceDefinition(id);
+        console.log(`  ${icon.info} ${svc.id} ${c.dim(`(${svc.kind})`)}`);
+      }
+    }
+
+    if (directDependents.length === 0 && transitiveOnly.length === 0) {
+      console.log(`\n  ${c.green('No other services depend on this service.')}`);
+    }
+
+    if (affectedProbes.length > 0) {
+      console.log(`\n${c.bold('Affected verification probes:')}`);
+      for (const p of affectedProbes) {
+        console.log(`  ${c.dim(p.service)} → ${p.label}`);
+      }
+    }
+
+    if (affectedFlows.length > 0) {
+      console.log(`\n${c.bold('Affected flow scenarios:')}`);
+      for (const f of affectedFlows) {
+        console.log(`  ${icon.warn} ${f.label}`);
+      }
     }
   }
 };
@@ -1754,6 +1857,15 @@ const main = async () => {
 
     case 'doctor': {
       await runDoctor(jsonOutput, briefOutput);
+      break;
+    }
+
+    case 'impact': {
+      const svcId = positional[1];
+      if (!svcId) { console.error('Usage: orcha impact <service> [--profile <name>]'); process.exit(1); }
+      const profIdx = args.indexOf('--profile');
+      const prof = profIdx >= 0 ? args[profIdx + 1] : undefined;
+      runImpact(svcId, prof, jsonOutput);
       break;
     }
 
