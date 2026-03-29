@@ -475,3 +475,108 @@ export const readLogTail = (serviceId: string, lines = 50): string | null => {
   const allLines = content.split('\n');
   return allLines.slice(-lines).join('\n');
 };
+
+// ---------------------------------------------------------------------------
+// Watch: Continuous health monitoring
+// ---------------------------------------------------------------------------
+
+export type WatchEvent = {
+  timestamp: string;
+  serviceId: string;
+  event: 'healthy' | 'unhealthy' | 'restarted' | 'restart_failed';
+  detail?: string;
+};
+
+export type WatchCallbacks = {
+  onCheck?: (statuses: ServiceStatus[]) => void;
+  onStateChange?: (event: WatchEvent) => void;
+  onError?: (error: string) => void;
+};
+
+/**
+ * Continuously monitor running services and optionally restart on failure.
+ * Returns an abort function to stop watching.
+ */
+export const watch = (
+  options: {
+    intervalMs?: number;
+    autoRestart?: boolean;
+    maxRestarts?: number;
+  } = {},
+  callbacks: WatchCallbacks = {},
+): { stop: () => void } => {
+  const { intervalMs = 30_000, autoRestart = false, maxRestarts = 3 } = options;
+  const restartCounts = new Map<string, number>();
+  const previousStates = new Map<string, string>();
+  let running = true;
+
+  const poll = async () => {
+    while (running) {
+      try {
+        cleanStaleProcesses();
+        const statuses = await getStatus();
+        callbacks.onCheck?.(statuses);
+
+        for (const status of statuses) {
+          const prev = previousStates.get(status.serviceId);
+          const curr = status.state;
+
+          // Detect state transitions
+          if (prev && prev !== curr) {
+            if (curr === 'READY') {
+              callbacks.onStateChange?.({
+                timestamp: new Date().toISOString(),
+                serviceId: status.serviceId,
+                event: 'healthy',
+              });
+            } else if (prev === 'READY' && (curr === 'STOPPED' || curr === 'RUNNING')) {
+              callbacks.onStateChange?.({
+                timestamp: new Date().toISOString(),
+                serviceId: status.serviceId,
+                event: 'unhealthy',
+                detail: `was ${prev}, now ${curr}`,
+              });
+
+              // Auto-restart if enabled
+              if (autoRestart && curr === 'STOPPED') {
+                const count = restartCounts.get(status.serviceId) ?? 0;
+                if (count < maxRestarts) {
+                  restartCounts.set(status.serviceId, count + 1);
+                  try {
+                    const result = await startService(status.serviceId, status.profile ?? undefined);
+                    callbacks.onStateChange?.({
+                      timestamp: new Date().toISOString(),
+                      serviceId: status.serviceId,
+                      event: result.healthy ? 'restarted' : 'restart_failed',
+                      detail: result.error,
+                    });
+                  } catch (err) {
+                    callbacks.onStateChange?.({
+                      timestamp: new Date().toISOString(),
+                      serviceId: status.serviceId,
+                      event: 'restart_failed',
+                      detail: (err as Error).message,
+                    });
+                  }
+                }
+              }
+            }
+          }
+
+          previousStates.set(status.serviceId, curr);
+        }
+      } catch (err) {
+        callbacks.onError?.((err as Error).message);
+      }
+
+      // Sleep for interval
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+  };
+
+  poll();
+
+  return {
+    stop: () => { running = false; },
+  };
+};

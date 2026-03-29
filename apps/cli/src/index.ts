@@ -48,6 +48,8 @@ import {
   getStatus,
   readLogTail,
   getStartOrder,
+  watch,
+  type WatchEvent,
 } from '@orcha/orchestrator';
 
 const execFileAsync = promisify(execFile);
@@ -68,6 +70,7 @@ Stack:
   up [preset|service] [--profile]  Start services with dependency resolution
   down [service]                   Stop a service or all managed services
   status                           Show running service statuses
+  watch [--restart]                Continuous health monitoring (Ctrl+C to stop)
   logs <service> [lines]           Tail service logs
 
 Workspace:
@@ -1780,6 +1783,65 @@ const main = async () => {
 
     case 'status': {
       await runStatus(jsonOutput, briefOutput);
+      break;
+    }
+
+    case 'watch': {
+      const doRestart = args.includes('--restart');
+      const intervalMs = 30_000;
+
+      if (!jsonOutput) {
+        console.log(`\n${c.bold('Watching services')} (every ${intervalMs / 1000}s, Ctrl+C to stop)${doRestart ? c.yellow(' [auto-restart enabled]') : ''}\n`);
+      }
+
+      const watcher = watch(
+        { intervalMs, autoRestart: doRestart, maxRestarts: 3 },
+        {
+          onCheck: (statuses) => {
+            if (jsonOutput) return; // JSON mode only emits events
+            const ready = statuses.filter((s) => s.state === 'READY').length;
+            const total = statuses.filter((s) => s.state !== 'STOPPED').length;
+            const down = statuses.filter((s) => s.state === 'STOPPED' && s.pid !== null).length;
+            process.stdout.write(`\r${c.dim(new Date().toLocaleTimeString())} ${summaryLine([
+              ready > 0 ? c.green(`${ready} ready`) : '',
+              down > 0 ? c.red(`${down} down`) : '',
+              c.dim(`${total} tracked`),
+            ])}    `);
+          },
+          onStateChange: (event: WatchEvent) => {
+            if (jsonOutput) {
+              console.log(JSON.stringify(event));
+            } else {
+              const timestamp = c.dim(new Date(event.timestamp).toLocaleTimeString());
+              const svc = event.serviceId;
+              switch (event.event) {
+                case 'healthy':
+                  console.log(`\n${timestamp} ${icon.pass} ${svc} ${c.green('healthy')}`);
+                  break;
+                case 'unhealthy':
+                  console.log(`\n${timestamp} ${icon.fail} ${svc} ${c.red('unhealthy')} ${c.dim(event.detail ?? '')}`);
+                  break;
+                case 'restarted':
+                  console.log(`\n${timestamp} ${icon.info} ${svc} ${c.cyan('restarted')}`);
+                  break;
+                case 'restart_failed':
+                  console.log(`\n${timestamp} ${icon.fail} ${svc} ${c.red('restart failed')} ${c.dim(event.detail ?? '')}`);
+                  break;
+              }
+            }
+          },
+        },
+      );
+
+      // Keep running until Ctrl+C
+      process.on('SIGINT', () => {
+        watcher.stop();
+        if (!jsonOutput) console.log(`\n\n${c.dim('Watch stopped.')}`);
+        process.exit(0);
+      });
+
+      // Block indefinitely
+      await new Promise(() => {});
       break;
     }
 
