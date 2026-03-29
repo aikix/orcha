@@ -165,6 +165,7 @@ orcha (CLI framework)          Team Workspace
 | `orcha up [preset\|service] [--profile]` | Start services with dependency resolution |
 | `orcha down [service]` | Stop services |
 | `orcha status` | Show running services |
+| `orcha watch [--restart]` | Continuous health monitoring |
 | `orcha doctor` | Check binaries and health |
 | `orcha impact <service>` | Blast radius analysis |
 | `orcha graph [preset]` | Show dependency graph |
@@ -205,7 +206,8 @@ orcha (CLI framework)          Team Workspace
 | `@orcha/service-definitions` | TypeScript types (ServiceDefinition, OrchaConfig, etc.) |
 | `@orcha/config-loader` | Reads `orcha.config.yaml`, resolves profiles, interpolates variables |
 | `@orcha/discovery` | Org scanning, local workspace scanning, repo analysis, dependency detection, config generation |
-| `@orcha/orchestrator` | Service lifecycle: start/stop, dependency resolution, health gating, process state |
+| `@orcha/orchestrator` | Service lifecycle: start/stop/watch, dependency resolution, health gating, process state |
+| `@orcha/mcp-server` | MCP server: exposes workspace context (topology, health, KB, blast radius) to any AI agent |
 
 ## Development
 
@@ -229,4 +231,5 @@ Orcha is a feature-complete alpha. All core features are implemented and working
 | Verification (stack/api/flow/seed) | ✅ Working |
 | PR / delta tooling | ✅ Working |
 | KB management | ✅ Working |
+| MCP server | ✅ Working (resources + tools for any MCP-compatible agent) |
 | Agent skills (10 total) | ✅ Working (init, check, sync, pr-review, debug, weekly, kb-baseline, kb-update, onboard, impact) |
