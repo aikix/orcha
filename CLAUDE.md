@@ -63,5 +63,13 @@ Monorepo using Bun workspaces + Turborepo. All packages use `bun:test` and TypeS
 
 - Uses `bun:test` (`describe`/`test`/`expect`)
 - Config-loader has 35+ tests with fixtures in `packages/config-loader/src/__fixtures__/`
+- Discovery has 19 tests (dependency detection, config generation, org inference)
 - Run a single test file: `bun test packages/config-loader/src/loader.test.ts`
 - `resetConfig()` must be called between tests that load different fixture configs
+
+## Commits & Releases
+
+Uses semantic-release with conventional commits. Commit messages determine versioning:
+- `feat:` → minor bump, `fix:` → patch bump, `feat!:` or `BREAKING CHANGE:` → major bump
+- `chore:`, `docs:`, `refactor:`, `test:` → no release
+- Pushing to `main` triggers automatic release with compiled binaries

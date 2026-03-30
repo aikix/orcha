@@ -16,7 +16,8 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "build:binary": "bun build apps/cli/src/index.ts --compile --outfile dist/orcha"
+    "build:binary": "bun build apps/cli/src/index.ts --compile --outfile dist/orcha",
+    "build:binaries": "bun run scripts/build-binaries.ts"
   },
   "devDependencies": {
     "@types/node": "^24.3.1",
