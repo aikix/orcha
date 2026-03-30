@@ -211,6 +211,18 @@ bun test packages/config-loader/   # Run tests (58 total across packages)
 bun link                           # Install globally from source
 ```
 
+### Commits & Releases
+
+This project uses [semantic-release](https://semantic-release.gitbook.io/) with [conventional commits](https://www.conventionalcommits.org/). Pushing to `main` automatically versions and releases.
+
+```bash
+feat: add new command          # → minor version bump (0.1.0 → 0.2.0)
+fix: handle null port          # → patch version bump (0.1.0 → 0.1.1)
+feat!: rename config key       # → major version bump (0.1.0 → 1.0.0)
+chore: update deps             # → no release
+docs: fix typo                 # → no release
+```
+
 ## Status
 
 All core features are implemented and working. Orcha is ready for early adopter teams.
