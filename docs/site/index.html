@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orcha — Your AI Agent's Workspace Brain</title>
+  <meta name="description" content="Agent-first orchestration for multi-repo microservice architectures. Give your AI coding agent structured knowledge about services, dependencies, and health.">
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-dim: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --yellow: #d29922;
+      --red: #f85149;
+      --purple: #bc8cff;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+    /* Hero */
+    .hero {
+      padding: 80px 0 60px;
+      text-align: center;
+    }
+    .hero h1 {
+      font-size: 3rem;
+      font-weight: 800;
+      margin-bottom: 16px;
+      background: linear-gradient(135deg, var(--accent), var(--purple));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero .tagline {
+      font-size: 1.5rem;
+      color: var(--text-dim);
+      margin-bottom: 32px;
+    }
+    .hero .subtitle {
+      font-size: 1.1rem;
+      color: var(--text-dim);
+      max-width: 640px;
+      margin: 0 auto 40px;
+    }
+
+    /* CTA Buttons */
+    .cta {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .btn {
+      display: inline-block;
+      padding: 12px 28px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 1rem;
+      transition: opacity 0.2s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary {
+      background: var(--accent);
+      color: var(--bg);
+    }
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    /* Code block */
+    .code-block {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin: 40px auto;
+      max-width: 600px;
+      text-align: left;
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 0.9rem;
+      overflow-x: auto;
+    }
+    .code-block .comment { color: var(--text-dim); }
+    .code-block .cmd { color: var(--green); }
+
+    /* Comparison */
+    .comparison {
+      padding: 60px 0;
+    }
+    .comparison h2 {
+      text-align: center;
+      font-size: 2rem;
+      margin-bottom: 32px;
+    }
+    .compare-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    .compare-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+    }
+    .compare-card h3 {
+      margin-bottom: 16px;
+      font-size: 1.1rem;
+    }
+    .compare-card.before h3 { color: var(--red); }
+    .compare-card.after h3 { color: var(--green); }
+    .compare-card ul {
+      list-style: none;
+      padding: 0;
+    }
+    .compare-card li {
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-dim);
+      font-size: 0.95rem;
+    }
+    .compare-card li:last-child { border-bottom: none; }
+
+    /* Features */
+    .features {
+      padding: 60px 0;
+    }
+    .features h2 {
+      text-align: center;
+      font-size: 2rem;
+      margin-bottom: 40px;
+    }
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+    }
+    .feature-card .icon {
+      font-size: 1.5rem;
+      margin-bottom: 12px;
+    }
+    .feature-card h3 {
+      margin-bottom: 8px;
+      font-size: 1rem;
+    }
+    .feature-card p {
+      color: var(--text-dim);
+      font-size: 0.9rem;
+    }
+
+    /* Skills */
+    .skills {
+      padding: 60px 0;
+    }
+    .skills h2 {
+      text-align: center;
+      font-size: 2rem;
+      margin-bottom: 32px;
+    }
+    .skill-list {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+    .skill {
+      display: flex;
+      gap: 12px;
+      align-items: baseline;
+      padding: 12px 16px;
+      background: var(--surface);
+      border-radius: 6px;
+    }
+    .skill code {
+      color: var(--accent);
+      font-family: "SF Mono", monospace;
+      font-size: 0.85rem;
+      white-space: nowrap;
+    }
+    .skill span {
+      color: var(--text-dim);
+      font-size: 0.85rem;
+    }
+
+    /* Footer */
+    .footer {
+      padding: 40px 0;
+      text-align: center;
+      color: var(--text-dim);
+      border-top: 1px solid var(--border);
+      margin-top: 40px;
+    }
+    .footer a { color: var(--accent); text-decoration: none; }
+
+    /* Install section */
+    .install {
+      padding: 60px 0;
+      text-align: center;
+    }
+    .install h2 {
+      font-size: 2rem;
+      margin-bottom: 24px;
+    }
+
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 2rem; }
+      .hero .tagline { font-size: 1.2rem; }
+      .compare-grid, .feature-grid, .skill-list { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<section class="hero">
+  <div class="container">
+    <h1>Orcha</h1>
+    <p class="tagline">Your AI agent's workspace brain</p>
+    <p class="subtitle">
+      Agent-first orchestration for multi-repo microservice architectures.
+      Give your AI coding agent structured knowledge about services, dependencies, health, and history.
+    </p>
+    <div class="cta">
+      <a href="https://github.com/aikix/orcha" class="btn btn-primary">View on GitHub</a>
+      <a href="https://github.com/aikix/orcha/blob/main/docs/PRD.md" class="btn btn-secondary">Read the PRD</a>
+    </div>
+
+    <div class="code-block">
+      <span class="comment"># One command to go from zero to productive</span><br>
+      <span class="cmd">/orcha-onboard</span> https://github.com/your-org<br><br>
+      <span class="comment"># Your agent now knows everything</span><br>
+      <span class="cmd">/orcha-impact</span> api-service<br>
+      <span class="comment"># "3 services affected. web-ui depends directly. user-flow scenario would break."</span>
+    </div>
+  </div>
+</section>
+
+<section class="comparison">
+  <div class="container">
+    <h2>The Problem Orcha Solves</h2>
+    <div class="compare-grid">
+      <div class="compare-card before">
+        <h3>Without Orcha</h3>
+        <ul>
+          <li>Agent re-discovers workspace topology every session</li>
+          <li>New developer takes 2 days to set up locally</li>
+          <li>"Which services depend on this?" &mdash; ask a human</li>
+          <li>PR review misses cross-service breakage</li>
+          <li>Service goes down, nobody notices</li>
+          <li>Tribal knowledge in Slack threads and people's heads</li>
+        </ul>
+      </div>
+      <div class="compare-card after">
+        <h3>With Orcha</h3>
+        <ul>
+          <li>Agent knows services, deps, and topology instantly</li>
+          <li><code>/orcha-onboard</code> &mdash; productive in 15 minutes</li>
+          <li><code>/orcha-impact</code> &mdash; concrete blast radius</li>
+          <li><code>/orcha-pr-review</code> &mdash; traces cross-repo impact</li>
+          <li><code>orcha watch --restart</code> &mdash; auto-recovers</li>
+          <li><code>orcha.config.yaml</code> &mdash; versioned, shared, declarative</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="features">
+  <div class="container">
+    <h2>Built for Agents, Used by Developers</h2>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="icon">&#x1F50D;</div>
+        <h3>Auto-Discovery</h3>
+        <p>Scan a GitHub org or local workspace. Reads actual source code to detect ports, health endpoints, dependencies. Supports Node.js, Python, Go.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">&#x1F3AF;</div>
+        <h3>Profile-Aware</h3>
+        <p><code>--profile staging</code> swaps the entire dependency graph. UI devs skip Docker entirely. Backend devs get full local infra.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">&#x1F4CA;</div>
+        <h3>Blast Radius</h3>
+        <p><code>orcha impact</code> shows direct dependents, transitive dependents, affected probes, and affected flows. Know before you break.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">&#x1F916;</div>
+        <h3>MCP Server</h3>
+        <p>Any MCP-compatible agent gets workspace context automatically. Resources for topology, health, KB. Tools for config, impact, search.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">&#x1F4DA;</div>
+        <h3>Living Knowledge Base</h3>
+        <p>KB grows naturally from PR reviews. <code>/orcha-kb-baseline</code> bootstraps, <code>/orcha-kb-update</code> keeps it fresh.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">&#x1F6E1;</div>
+        <h3>Health Monitoring</h3>
+        <p><code>orcha watch --restart</code> continuously monitors services and auto-restarts on failure. JSON event stream for agent consumption.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="skills">
+  <div class="container">
+    <h2>10 Agent Skills</h2>
+    <div class="skill-list">
+      <div class="skill"><code>/orcha-onboard</code> <span>Zero-to-productive onboarding</span></div>
+      <div class="skill"><code>/orcha-init</code> <span>Workspace initialization</span></div>
+      <div class="skill"><code>/orcha-check</code> <span>Health assessment</span></div>
+      <div class="skill"><code>/orcha-impact</code> <span>Blast radius analysis</span></div>
+      <div class="skill"><code>/orcha-pr-review</code> <span>Cross-repo PR review</span></div>
+      <div class="skill"><code>/orcha-debug</code> <span>Root cause diagnosis</span></div>
+      <div class="skill"><code>/orcha-sync</code> <span>Refresh workspace knowledge</span></div>
+      <div class="skill"><code>/orcha-weekly</code> <span>Weekly summary + proposals</span></div>
+      <div class="skill"><code>/orcha-kb-baseline</code> <span>Bootstrap KB from code</span></div>
+      <div class="skill"><code>/orcha-kb-update</code> <span>Update KB from PRs</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="install">
+  <div class="container">
+    <h2>Get Started</h2>
+    <div class="code-block">
+      <span class="comment"># Install</span><br>
+      <span class="cmd">curl -fsSL</span> https://raw.githubusercontent.com/aikix/orcha/main/install.sh | bash<br><br>
+      <span class="comment"># Or from source</span><br>
+      <span class="cmd">git clone</span> https://github.com/aikix/orcha.git && cd orcha<br>
+      <span class="cmd">bun install</span> && <span class="cmd">bun link</span><br><br>
+      <span class="comment"># Initialize your workspace</span><br>
+      <span class="cmd">/orcha-onboard</span> https://github.com/your-org
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="container">
+    <p>
+      <a href="https://github.com/aikix/orcha">GitHub</a> &middot;
+      <a href="https://github.com/aikix/orcha/blob/main/docs/PRD.md">PRD</a> &middot;
+      <a href="https://github.com/aikix/orcha/blob/main/docs/config-reference.md">Config Reference</a> &middot;
+      <a href="https://github.com/aikix/orcha/blob/main/docs/agent-skills.md">Agent Skills Guide</a>
+    </p>
+    <p style="margin-top: 12px;">MIT License</p>
+  </div>
+</footer>
+
+</body>
+</html>

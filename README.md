@@ -1,235 +1,232 @@
 # Orcha
 
-Agent-first multi-repo orchestration tool. Orcha turns a workspace of sibling repos into a managed local stack with dependency resolution, health gating, and AI-powered workflows.
+**Your AI agent's workspace brain.**
 
-**Agent-first means:** The CLI does plumbing (clone, scan, start, stop). Agents do the thinking (analyze code, infer config, review PRs, debug services). Every command emits `--json` for structured agent consumption.
-
-## The problem
-
-- **Setting up a multi-service workspace is painful** — New team members clone repos one by one, guess at ports, manually wire config, and hope the startup order is right.
-- **Service topology is tribal knowledge** — Which services depend on which? What port does each use? What health endpoint? This lives in READMEs, Slack threads, and people's heads.
-- **Local development requires too much infrastructure** — Running the full stack needs Redis, DynamoDB, Postgres, and careful environment config. But for UI work you just need a proxy to staging.
-- **Agents start from scratch every session** — Without a structured config, AI coding agents re-discover the workspace topology every time.
-
-## How Orcha solves it
-
-1. **One-command workspace setup** — `orcha init <github-org-url>` scans the org, diffs against your local workspace, clones missing repos, and generates a complete config. The `/orcha-init` agent skill reads actual source code to get ports, health endpoints, and dependencies right.
-
-2. **Declarative workspace config** — `orcha.config.yaml` defines services, dependencies, profiles (local/staging/dev), presets, health checks, and verification probes. One file, version controlled, shared by the team.
-
-3. **Profile-aware stack management** — `orcha up trust-status-ui --profile staging` starts just the UI with staging APIs. `orcha up mytrust-core` starts the full local stack with Docker infra, dependency-ordered, health-gated.
-
-4. **Agent-native design** — All commands emit `--json`. Skills like `/orcha-init`, `/orcha-check`, `/orcha-sync` chain CLI commands with agent intelligence. Agents accumulate workspace knowledge across sessions.
-
-## Quick start
-
-### Prerequisites
-
-| Tool | Purpose |
-|------|---------|
-| [Bun](https://bun.sh/) v1.2+ | Runtime & package manager |
-| [GitHub CLI](https://cli.github.com/) | Org scanning, PR workflows |
-| [Docker](https://www.docker.com/) | Infrastructure services (optional for staging profiles) |
-| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [Cursor](https://cursor.com/) | Agent skills |
-
-### Install
+Orcha is an agent-first orchestration tool for multi-repo microservice architectures. It gives AI coding agents (Claude Code, Cursor, Windsurf) structured knowledge about your services, dependencies, health, and history — so they stop guessing and start being productive from the first prompt.
 
 ```bash
-git clone <repo-url> && cd orcha
-bun install
-bun link                         # makes `orcha` available globally
+# One command to set up everything
+/orcha-onboard https://github.com/your-org
+
+# Your agent now knows: services, ports, dependencies, health, profiles, history
 ```
 
-### Initialize a workspace
+## Why Orcha?
 
-**With an agent (recommended):**
+| Without Orcha | With Orcha |
+|---|---|
+| Agent re-discovers workspace topology every session | Agent knows your services, deps, and topology instantly |
+| New developer takes 2 days to set up locally | `/orcha-onboard` → productive in 15 minutes |
+| "Which services depend on this?" → ask a human | `/orcha-impact api-service` → concrete answer |
+| PR review misses cross-service breakage | `/orcha-pr-review` traces blast radius across repos |
+| Service goes down, nobody notices | `orcha watch --restart` auto-recovers |
+
+## Install
+
+**Quick install** (pre-built binary):
 ```bash
-# In Claude Code or Cursor, run:
-/orcha-init https://github.com/your-org
+curl -fsSL https://raw.githubusercontent.com/aikix/orcha/main/install.sh | bash
 ```
 
-The agent will:
-1. Scan the org and show what's present vs missing
-2. Ask which repos to clone
-3. Read source code to determine ports, health endpoints, dependencies
-4. Generate `orcha.config.yaml` with accurate configuration
+**From source** (requires [Bun](https://bun.sh/)):
+```bash
+git clone https://github.com/aikix/orcha.git && cd orcha
+bun install && bun link
+```
 
-**Without an agent:**
+**Prerequisites:**
+- [Bun](https://bun.sh/) v1.2+ — Runtime & package manager
+- [GitHub CLI](https://cli.github.com/) — Org scanning, PR workflows
+- [Docker](https://www.docker.com/) — Infrastructure services (optional for staging profiles)
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [Cursor](https://cursor.com/) — Agent skills
+
+## Quick Start
+
+### 1. Initialize your workspace
+
+**New developer? Use the full onboarding:**
+```bash
+/orcha-onboard https://github.com/your-org
+```
+This checks prerequisites, clones repos, reads source code to generate config, starts services, seeds test data, and gives you an orientation.
+
+**Already have repos cloned?**
+```bash
+/orcha-init ~/Workspace/myteam
+```
+Scans your local repos, infers the GitHub org from git remotes, and generates `orcha.config.yaml`.
+
+**Just want the CLI?**
 ```bash
 orcha init https://github.com/your-org ~/Workspace/myteam
-# Shows diff of remote vs local repos
-# Then manually: orcha generate-config for regex-based fallback
 ```
 
-### Use the workspace
+### 2. Start your stack
 
 ```bash
-# Start services (coming soon)
-orcha up core --profile staging     # UI + staging APIs, no Docker needed
+orcha up core --profile staging     # UI + staging APIs (no Docker needed)
 orcha up core --profile local       # Full local stack with infra
-
-# Check health
-orcha doctor                        # Binaries + service health
-orcha verify stack                  # Green/red for everything
-
-# Explore
-orcha graph core                    # Dependency tree
-orcha list services                 # All registered services
 ```
+
+### 3. Work with your agent
+
+```bash
+/orcha-check                        # "Is everything healthy?"
+/orcha-impact api-service           # "What breaks if I change this?"
+/orcha-pr-review <pr-url>           # "Is this PR safe to merge?"
+/orcha-debug user-service           # "Why is this service failing?"
+/orcha-sync                         # "What changed this week?"
+```
+
+## Features
+
+### Workspace Management
+| Command | What it does |
+|---|---|
+| `orcha init [org-url \| dir]` | Scan GitHub org or local workspace, generate config |
+| `orcha up [preset] --profile <name>` | Start services with dependency resolution + health gating |
+| `orcha down [service]` | Stop services gracefully (SIGTERM → SIGKILL) |
+| `orcha status` | Show running services with health state |
+| `orcha watch [--restart]` | Continuous health monitoring, auto-restart on failure |
+| `orcha doctor` | Check prerequisites + service health |
+| `orcha impact <service>` | Blast radius: dependents, affected probes, affected flows |
+| `orcha graph [preset]` | Dependency graph visualization |
+
+### Verification
+| Command | What it does |
+|---|---|
+| `orcha verify stack` | Health check all services (HTTP/TCP probes) |
+| `orcha verify api [service]` | API contract probes (status + response keys) |
+| `orcha verify flow [scenario]` | Multi-step cross-service flow scenarios |
+| `orcha seed [fixture...]` | Insert test data via HTTP with dependency ordering |
+
+### Code Intelligence
+| Command | What it does |
+|---|---|
+| `orcha pr list --since 2w` | PRs across all repos via GitHub CLI |
+| `orcha pr context <pr-url>` | Full PR context: diff, comments, reviews, files |
+| `orcha delta scan --since 1w` | Local git commits across repos (bot commits grouped) |
+| `orcha kb list [service]` | Knowledge base documents per service |
+| `orcha kb status` | KB freshness per service |
+
+### Agent Skills (10)
+| Skill | Purpose |
+|---|---|
+| `/orcha-onboard` | Full new developer onboarding (prereqs → init → start → seed → orient) |
+| `/orcha-init` | Workspace init from GitHub org URL or local directory |
+| `/orcha-check` | Health assessment: binaries, services, dependency chains |
+| `/orcha-impact` | Blast radius analysis: what breaks if a service changes |
+| `/orcha-pr-review` | AI-powered PR review with cross-service impact analysis |
+| `/orcha-debug` | Root cause diagnosis: config, deps, logs, KB, fix recommendation |
+| `/orcha-sync` | Refresh knowledge: commits, PRs, KB freshness |
+| `/orcha-weekly` | Weekly summary with architecture evolution proposals |
+| `/orcha-kb-baseline` | Generate baseline KB docs from source code |
+| `/orcha-kb-update` | Update KB from recent merged PRs |
+
+### MCP Server
+Any MCP-compatible AI agent gets workspace context automatically:
+
+```json
+{ "mcpServers": { "orcha": { "command": "bun", "args": ["packages/mcp-server/src/index.ts"] } } }
+```
+
+**Resources:** `orcha://services`, `orcha://presets`, `orcha://topology`
+
+**Tools:** `get_service_config`, `get_blast_radius`, `get_start_order`, `search_kb`, `get_workspace_summary`
 
 ## Config: `orcha.config.yaml`
 
-Lives in your workspace root. Generated by `/orcha-init`, customized by the team.
+Declarative workspace config. Generated by `/orcha-init`, customized by the team, version controlled.
 
 ```yaml
 version: 1
-
 workspace:
   name: "my-team"
-
 github:
   host: "github.com"
   org: "my-org"
-
 services:
   api-service:
     id: api-service
     label: "API Service"
-    kind: service
+    kind: service                              # service | infra | library
     repoPath: "${workspace.root}/api-service"
-    workingDirectory: "${workspace.root}/api-service"
     runtime:
       type: script
       command: { bin: npm, args: [run, dev] }
     localUrl: "http://localhost:3000"
     healthChecks:
       - { name: health, url: "http://localhost:3000/health", expectedStatus: 200 }
-    dependencies: [redis]
+    dependencies: [redis]                      # started before this service
     profiles:
       staging:
-        description: "Against staging backend"
-        env:
-          API_URL: "https://staging.example.com"
-    # ... env, nodeConfig, verification
-
+        description: "Against staging APIs"
+        env: { API_URL: "https://staging.example.com" }
+        dependencies: []                       # no local infra needed
 presets:
   core:
     description: "Core development stack"
-    services: [web-ui]  # deps resolved automatically
-
+    services: [web-ui]                         # deps resolved automatically
 defaults:
   upTarget: "core"
 ```
 
 See [docs/config-reference.md](docs/config-reference.md) for the full schema.
 
+## Multi-Language Support
+
+Orcha discovers and manages services in any language:
+
+| Language | Detection | Port Discovery |
+|---|---|---|
+| **Node.js / TypeScript** | `package.json`, `tsconfig.json` | `config/default.cjs`, Dockerfile EXPOSE |
+| **Python** | `pyproject.toml`, `requirements.txt` | Flask `app.run()`, FastAPI/Uvicorn, env defaults |
+| **Go** | `go.mod` | `http.ListenAndServe`, gin, echo, fiber |
+| **Any** | `Dockerfile`, `docker-compose.yml` | EXPOSE, port mappings |
+
 ## Architecture
 
 ```
-orcha (CLI framework)          Team Workspace
-├── packages/                  ├── orcha.config.yaml    ← team's config
-│   ├── config-loader/         ├── .orcha/              ← runtime state
-│   ├── discovery/             ├── service-a/           ← service repos
-│   ├── orchestrator/          ├── service-b/
-│   ├── verifier/              └── ...
-│   └── ...
-├── apps/cli/
-└── .claude/commands/          ← agent skills
+orcha (generic framework)        Team Workspace
+├── @orcha/service-definitions   ├── orcha.config.yaml     ← team config
+├── @orcha/config-loader         ├── .orcha/state/          ← runtime state
+├── @orcha/discovery             ├── knowledge/             ← KB docs
+├── @orcha/orchestrator          ├── service-a/             ← repos
+├── @orcha/mcp-server            ├── service-b/
+├── apps/cli                     └── ...
+└── .claude/commands/            ← agent skills
 ```
 
-**Separation of concerns:**
-- `orcha` repo = generic framework (no team data)
-- Team workspace = `orcha.config.yaml` + service repos + runtime state
-- Agent skills = intelligence layer on top of CLI plumbing
-
-### Design principles
-
-- **Agent-first, human-second** — Commands produce `--json`. Agent skills are the primary interface. Human-readable tables are the fallback.
-- **Config over code** — Service topology is declarative YAML, not hardcoded TypeScript. Teams own their config.
-- **Profiles over flags** — `--profile staging` switches the entire backend wiring. No manual env var juggling.
-- **Plumbing + intelligence** — CLI does mechanical work (clone, start, health check). Agents do reasoning (analyze code, infer config, review PRs).
-
-## CLI Commands
-
-### Setup & Discovery
-| Command | Action |
-|---|---|
-| `orcha init <org-url> [dir]` | Diff remote org vs local workspace |
-| `orcha list-repos <org-url>` | List repos in a GitHub org |
-| `orcha scan <org-url> --all` | Shallow clone + analyze repos |
-| `orcha clone <org-url> [repos...]` | Clone repos into workspace |
-
-### Stack Management
-| Command | Action |
-|---|---|
-| `orcha up [preset\|service] [--profile]` | Start services with dependency resolution |
-| `orcha down [service]` | Stop services |
-| `orcha status` | Show running services |
-| `orcha watch [--restart]` | Continuous health monitoring |
-| `orcha doctor` | Check binaries and health |
-| `orcha impact <service>` | Blast radius analysis |
-| `orcha graph [preset]` | Show dependency graph |
-| `orcha logs [service]` | Tail service logs |
-
-### Verification| Command | Action |
-|---|---|
-| `orcha verify stack` | Health check all running services |
-| `orcha verify api [service]` | Verify API contracts |
-| `orcha seed [fixture...]` | Seed test data |
-
-### Code Intelligence| Command | Action |
-|---|---|
-| `orcha pr list --since <window>` | PRs across repos |
-| `orcha pr context <url>` | Full PR context |
-| `orcha delta scan --since <window>` | Git commits across repos |
-| `orcha delta summarize --since <window>` | Change summary |
-
-## Agent Skills
-
-| Skill | Purpose |
-|---|---|
-| `/orcha-init [org-url \| dir]` | Agent-powered workspace init (org URL or local workspace) |
-| `/orcha-check` | Health assessment: binaries, services, dependency chains |
-| `/orcha-sync` | Refresh agent knowledge: commits, PRs, KB freshness |
-| `/orcha-pr-review <url>` | AI-powered PR review with blast radius analysis |
-| `/orcha-debug <service>` | Deep service diagnostic: root cause + fix |
-| `/orcha-weekly` | Weekly summary with architecture evolution proposals |
-| `/orcha-kb-baseline` | Generate baseline KB docs from source code analysis |
-| `/orcha-kb-update <service>` | Update KB from recent merged PRs |
-| `/orcha-onboard [org-url \| dir]` | Full new developer onboarding (prereqs → init → start → seed → orient) |
-| `/orcha-impact <service>` | Blast radius: what breaks if this service changes |
-
-## Packages
-
-| Package | Purpose |
-|---|---|
-| `@orcha/service-definitions` | TypeScript types (ServiceDefinition, OrchaConfig, etc.) |
-| `@orcha/config-loader` | Reads `orcha.config.yaml`, resolves profiles, interpolates variables |
-| `@orcha/discovery` | Org scanning, local workspace scanning, repo analysis, dependency detection, config generation |
-| `@orcha/orchestrator` | Service lifecycle: start/stop/watch, dependency resolution, health gating, process state |
-| `@orcha/mcp-server` | MCP server: exposes workspace context (topology, health, KB, blast radius) to any AI agent |
+**Design principles:**
+- **Agent-first** — `--json` on every command. Agent skills are the primary interface.
+- **Config over code** — Topology is YAML, not hardcoded. Zero team-specific data in Orcha.
+- **Profiles over flags** — `--profile staging` swaps the entire dependency graph.
 
 ## Development
 
 ```bash
-bun install
-bun run dev:cli -- <command>    # Run CLI in dev mode
-bun run test                    # Run all tests
-bun run typecheck               # Typecheck all packages
-bun link                        # Install globally from source
+bun install                        # Install dependencies
+bun run dev:cli -- <command>       # Run CLI in dev mode
+bun test packages/config-loader/   # Run tests (58 total across packages)
+bun link                           # Install globally from source
 ```
 
 ## Status
 
-Orcha is a feature-complete alpha. All core features are implemented and working.
+All core features are implemented and working. Orcha is ready for early adopter teams.
 
 | Area | Status |
 |---|---|
-| Config loading | ✅ Working (35+ tests) |
-| Discovery / init | ✅ Working (org URL + local workspace modes) |
-| Stack management (up/down/status/logs) | ✅ Working |
-| Verification (stack/api/flow/seed) | ✅ Working |
-| PR / delta tooling | ✅ Working |
-| KB management | ✅ Working |
-| MCP server | ✅ Working (resources + tools for any MCP-compatible agent) |
-| Agent skills (10 total) | ✅ Working (init, check, sync, pr-review, debug, weekly, kb-baseline, kb-update, onboard, impact) |
+| Config loading | ✅ 35+ tests |
+| Discovery (Node.js, Python, Go) | ✅ Org URL + local workspace |
+| Stack management | ✅ up/down/status/watch/doctor |
+| Verification | ✅ stack/api/flow/seed |
+| Code intelligence | ✅ PR/delta/KB |
+| MCP server | ✅ Resources + tools |
+| Agent skills | ✅ 10 skills |
+| CLI output | ✅ Colors, summaries, --brief, --json |
+| CI/CD | ✅ GitHub Actions (test + release) |
+
+## License
+
+MIT
