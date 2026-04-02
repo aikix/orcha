@@ -1,3 +1,12 @@
+## [1.0.1](https://github.com/aikix/orcha/compare/v1.0.0...v1.0.1) (2026-04-02)
+
+
+### Bug Fixes
+
+* drop --frozen-lockfile to avoid stale registry URLs ([d407b7a](https://github.com/aikix/orcha/commit/d407b7a2a105cd54a82923507565df61651d8404))
+* revert to bun 1.1.38 for CI — 1.3.11 has networking issues ([e9577a8](https://github.com/aikix/orcha/commit/e9577a804d4cd52c3be2f5cfb6cbe166c2b0483d)), closes [oven-sh/bun#22846](https://github.com/oven-sh/bun/issues/22846)
+* use bun 1.3.11 with --linker hoisted to fix CI hang ([576c73d](https://github.com/aikix/orcha/commit/576c73dce68b36e354f5d8c10612697f5746fb29)), closes [oven-sh/bun#22846](https://github.com/oven-sh/bun/issues/22846)
+
 # 1.0.0 (2026-04-02)
 
 
