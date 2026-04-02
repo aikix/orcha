@@ -1,5 +1,12 @@
 # Orcha
 
+[![Release](https://img.shields.io/github/v/release/aikix/orcha?style=flat-square&color=blue)](https://github.com/aikix/orcha/releases)
+[![License](https://img.shields.io/badge/license-Apache%202.0-green?style=flat-square)](LICENSE)
+[![Agent Skills](https://img.shields.io/badge/agent%20skills-10-purple?style=flat-square)](#agent-skills-10)
+[![Languages](https://img.shields.io/badge/languages-Node.js%20%7C%20Python%20%7C%20Go-orange?style=flat-square)](#multi-language-support)
+[![CI](https://img.shields.io/github/actions/workflow/status/aikix/orcha/release.yml?style=flat-square&label=CI)](https://github.com/aikix/orcha/actions)
+[![GitHub Stars](https://img.shields.io/github/stars/aikix/orcha?style=flat-square)](https://github.com/aikix/orcha/stargazers)
+
 **Your AI agent's workspace brain.**
 
 Orcha is an agent-first orchestration tool for multi-repo microservice architectures. It gives AI coding agents (Claude Code, Cursor, Windsurf) structured knowledge about your services, dependencies, health, and history — so they stop guessing and start being productive from the first prompt.
@@ -272,12 +279,15 @@ All core features are implemented and working. Orcha is ready for early adopter 
 
 ## Support the Project
 
+[![PayPal](https://img.shields.io/badge/PayPal-Support%20Development-blue?style=flat-square&logo=paypal)](https://REMOVED)
+[![GitHub Stars](https://img.shields.io/github/stars/aikix/orcha?style=flat-square&label=Star%20on%20GitHub)](https://github.com/aikix/orcha/stargazers)
+
 If Orcha is useful to your team, consider supporting its development:
 
 - **Star this repo** — It helps others discover the project
 - **Open issues** — Bug reports and feature requests make Orcha better
 - **Contribute** — See [CONTRIBUTING.md](CONTRIBUTING.md) to get started
-- **Sponsor** — [GitHub Sponsors](https://github.com/sponsors/aikix) if you want to support ongoing development
+- **Donate** — [PayPal](https://REMOVED) to support ongoing development
 
 ## License
 
