@@ -279,15 +279,15 @@ All core features are implemented and working. Orcha is ready for early adopter 
 
 ## Support the Project
 
-[![PayPal](https://img.shields.io/badge/PayPal-Support%20Development-blue?style=flat-square&logo=paypal)](https://REMOVED2026)
-[![GitHub Stars](https://img.shields.io/github/stars/aikix/orcha?style=flat-square&label=Star%20on%20GitHub)](https://github.com/aikix/orcha/stargazers)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-Support%20Development-yellow?style=flat-square&logo=buymeacoffee)](https://buymeacoffee.com/aikix)
+[![PayPal](https://img.shields.io/badge/PayPal-Donate-blue?style=flat-square&logo=paypal)](https://REMOVED2026)
 
 If Orcha is useful to your team, consider supporting its development:
 
 - **Star this repo** — It helps others discover the project
 - **Open issues** — Bug reports and feature requests make Orcha better
 - **Contribute** — See [CONTRIBUTING.md](CONTRIBUTING.md) to get started
-- **Donate** — [PayPal](https://REMOVED2026) to support ongoing development
+- **Donate** — [Buy Me a Coffee](https://buymeacoffee.com/aikix) or [PayPal](https://REMOVED2026)
 
 ## License
 
