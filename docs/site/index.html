@@ -243,7 +243,7 @@
     </p>
     <div class="cta">
       <a href="https://github.com/aikix/orcha" class="btn btn-primary">View on GitHub</a>
-      <a href="https://github.com/aikix/orcha/blob/main/docs/PRD.md" class="btn btn-secondary">Read the PRD</a>
+      <a href="https://github.com/aikix/orcha/blob/main/docs/config-reference.md" class="btn btn-secondary">Read the Docs</a>
     </div>
 
     <div class="code-block">
@@ -346,11 +346,11 @@
   <div class="container">
     <h2>Get Started</h2>
     <div class="code-block">
-      <span class="comment"># Install</span><br>
-      <span class="cmd">curl -fsSL</span> https://raw.githubusercontent.com/aikix/orcha/main/install.sh | bash<br><br>
-      <span class="comment"># Or from source</span><br>
+      <span class="comment"># Install CLI</span><br>
       <span class="cmd">git clone</span> https://github.com/aikix/orcha.git && cd orcha<br>
       <span class="cmd">bun install</span> && <span class="cmd">bun link</span><br><br>
+      <span class="comment"># Install agent skills</span><br>
+      <span class="cmd">orcha setup-skills</span> --ai claude --global<br><br>
       <span class="comment"># Initialize your workspace</span><br>
       <span class="cmd">/orcha-onboard</span> https://github.com/your-org
     </div>
@@ -361,11 +361,10 @@
   <div class="container">
     <p>
       <a href="https://github.com/aikix/orcha">GitHub</a> &middot;
-      <a href="https://github.com/aikix/orcha/blob/main/docs/PRD.md">PRD</a> &middot;
       <a href="https://github.com/aikix/orcha/blob/main/docs/config-reference.md">Config Reference</a> &middot;
       <a href="https://github.com/aikix/orcha/blob/main/docs/agent-skills.md">Agent Skills Guide</a>
     </p>
-    <p style="margin-top: 12px;">MIT License</p>
+    <p style="margin-top: 12px;">Apache 2.0</p>
   </div>
 </footer>
 

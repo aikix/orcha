@@ -3,3 +3,9 @@ dist/
 .turbo/
 *.log
 .DS_Store
+
+# Local overrides (never publish)
+orcha.config.local.yaml
+.claude/settings.local.json
+.env
+.env.*

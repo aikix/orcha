@@ -23,22 +23,39 @@ Orcha is an agent-first orchestration tool for multi-repo microservice architect
 
 ## Install
 
-**Quick install** (pre-built binary):
-```bash
-curl -fsSL https://raw.githubusercontent.com/aikix/orcha/main/install.sh | bash
-```
+### 1. Install the CLI
 
-**From source** (requires [Bun](https://bun.sh/)):
+**From source** (requires [Bun](https://bun.sh/) v1.3+):
 ```bash
 git clone https://github.com/aikix/orcha.git && cd orcha
 bun install && bun link
 ```
 
-**Prerequisites:**
-- [Bun](https://bun.sh/) v1.2+ — Runtime & package manager
+**Pre-built binary** (once releases are available):
+```bash
+curl -fsSL https://raw.githubusercontent.com/aikix/orcha/main/install.sh | bash
+```
+
+### 2. Install agent skills
+
+Skills give your AI agent the `/orcha-*` commands. Install them into your workspace or globally:
+
+```bash
+# Into a specific workspace
+orcha setup-skills --ai claude ~/Workspace/myteam
+
+# Globally (available in all projects)
+orcha setup-skills --ai claude --global
+```
+
+Supported AI tools: `claude`, `cursor`
+
+### Prerequisites
+
+- [Bun](https://bun.sh/) v1.3+ — Runtime & package manager
 - [GitHub CLI](https://cli.github.com/) — Org scanning, PR workflows
 - [Docker](https://www.docker.com/) — Infrastructure services (optional for staging profiles)
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [Cursor](https://cursor.com/) — Agent skills
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [Cursor](https://cursor.com/) — AI coding agent
 
 ## Quick Start
 
@@ -241,4 +258,4 @@ All core features are implemented and working. Orcha is ready for early adopter 
 
 ## License
 
-MIT
+Apache 2.0 — see [LICENSE](LICENSE) for details.
