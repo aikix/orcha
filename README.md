@@ -13,13 +13,27 @@ Orcha is an agent-first orchestration tool for multi-repo microservice architect
 
 ## Why Orcha?
 
+AI coding agents are powerful — but in multi-repo microservice architectures, they're flying blind. Every session they re-discover your workspace from scratch. They don't know which services depend on which, what ports things run on, or what breaks when you change something.
+
+**Orcha makes your agent intelligent about your infrastructure.**
+
+### The problem
+
 | Without Orcha | With Orcha |
 |---|---|
 | Agent re-discovers workspace topology every session | Agent knows your services, deps, and topology instantly |
 | New developer takes 2 days to set up locally | `/orcha-onboard` → productive in 15 minutes |
-| "Which services depend on this?" → ask a human | `/orcha-impact api-service` → concrete answer |
+| "Which services depend on this?" → ask a human | `/orcha-impact api-service` → concrete, traced answer |
 | PR review misses cross-service breakage | `/orcha-pr-review` traces blast radius across repos |
 | Service goes down, nobody notices | `orcha watch --restart` auto-recovers |
+| Tribal knowledge lives in people's heads | `/orcha-kb-baseline` builds a knowledge base from source code |
+
+### What makes it different
+
+- **Agent-first architecture** — Every CLI command supports `--json`. The 10 agent skills are the primary interface, not the CLI. Orcha is built for agents that think, not humans that type.
+- **Intelligent workspace setup** — `/orcha-init` doesn't just scaffold config. It reads your source code — `config/default.cjs`, `docker-compose.yml`, route handlers, env files — and generates accurate service definitions with correct ports, health endpoints, and dependency graphs.
+- **Auto-built knowledge base** — `/orcha-kb-baseline` generates architectural reference docs for every service by reading the actual code. `/orcha-kb-update` keeps them fresh from merged PRs. Your agent always has up-to-date context.
+- **Cross-repo intelligence** — `/orcha-impact` traces blast radius across service boundaries. `/orcha-pr-review` analyzes PRs with full knowledge of how services connect. These aren't generic tools — they understand your specific architecture.
 
 ## Install
 
@@ -31,7 +45,7 @@ git clone https://github.com/aikix/orcha.git && cd orcha
 bun install && bun link
 ```
 
-**Pre-built binary** (once releases are available):
+**Pre-built binary** (macOS and Linux):
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aikix/orcha/main/install.sh | bash
 ```
@@ -255,6 +269,15 @@ All core features are implemented and working. Orcha is ready for early adopter 
 | Agent skills | ✅ 10 skills |
 | CLI output | ✅ Colors, summaries, --brief, --json |
 | CI/CD | ✅ GitHub Actions (test + release) |
+
+## Support the Project
+
+If Orcha is useful to your team, consider supporting its development:
+
+- **Star this repo** — It helps others discover the project
+- **Open issues** — Bug reports and feature requests make Orcha better
+- **Contribute** — See [CONTRIBUTING.md](CONTRIBUTING.md) to get started
+- **Sponsor** — [GitHub Sponsors](https://github.com/sponsors/aikix) if you want to support ongoing development
 
 ## License
 
