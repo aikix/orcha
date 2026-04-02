@@ -10,7 +10,7 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, copyFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { c, icon, summaryLine, isBotCommit } from './format.js';
 import {
@@ -65,6 +65,7 @@ Setup:
   scan <org-url> [--all]           Shallow clone + analyze repos
   clone <org-url> [repos...]       Clone repos into workspace
   generate-config <org-url>        Regex-based config fallback
+  setup-skills --ai <claude|cursor> Install agent skills (add --global for all projects)
 
 Stack:
   up [preset|service] [--profile]  Start services with dependency resolution
@@ -286,6 +287,93 @@ const runInitLocal = async (
     }
     console.log(`\nUse /orcha-init in Claude Code for agent-powered config generation.`);
     console.log(`Or: orcha generate-config to write orcha.config.yaml from this analysis.`);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// setup-skills: Copy agent skills into target workspace
+// ---------------------------------------------------------------------------
+
+/** Resolve the orcha package root (where .claude/commands/ lives). */
+const getOrchaRoot = (): string => {
+  // import.meta.dir is apps/cli/src/ — orcha root is three levels up
+  return path.resolve(import.meta.dir, '..', '..', '..');
+};
+
+type AiTool = 'claude' | 'cursor';
+
+const runSetupSkills = (
+  targetDir: string,
+  aiTool: AiTool,
+  global: boolean,
+  jsonOutput: boolean,
+) => {
+  const orchaRoot = getOrchaRoot();
+  const installed: { file: string; dest: string }[] = [];
+  const errors: string[] = [];
+
+  if (aiTool === 'claude') {
+    const srcDir = path.join(orchaRoot, '.claude', 'commands');
+    const destBase = global
+      ? path.join(process.env.HOME ?? '~', '.claude', 'commands')
+      : path.join(targetDir, '.claude', 'commands');
+
+    if (!existsSync(srcDir)) {
+      errors.push(`Claude skills source not found: ${srcDir}`);
+    } else {
+      mkdirSync(destBase, { recursive: true });
+      for (const file of readdirSync(srcDir).filter((f) => f.startsWith('orcha-') && f.endsWith('.md'))) {
+        try {
+          copyFileSync(path.join(srcDir, file), path.join(destBase, file));
+          installed.push({ file, dest: destBase });
+        } catch (e: any) {
+          errors.push(`${file}: ${e.message}`);
+        }
+      }
+    }
+  } else if (aiTool === 'cursor') {
+    const srcDir = path.join(orchaRoot, '.cursor', 'skills');
+    const destBase = global
+      ? path.join(process.env.HOME ?? '~', '.cursor', 'skills')
+      : path.join(targetDir, '.cursor', 'skills');
+
+    if (!existsSync(srcDir)) {
+      errors.push(`Cursor skills source not found: ${srcDir}`);
+    } else {
+      for (const dir of readdirSync(srcDir).filter((d) => d.startsWith('orcha-'))) {
+        const srcSkillDir = path.join(srcDir, dir);
+        const destSkillDir = path.join(destBase, dir);
+        mkdirSync(destSkillDir, { recursive: true });
+        for (const file of readdirSync(srcSkillDir)) {
+          try {
+            copyFileSync(path.join(srcSkillDir, file), path.join(destSkillDir, file));
+            installed.push({ file: `${dir}/${file}`, dest: destSkillDir });
+          } catch (e: any) {
+            errors.push(`${dir}/${file}: ${e.message}`);
+          }
+        }
+      }
+    }
+  }
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({ tool: aiTool, global, targetDir, installed, errors }, null, 2));
+  } else {
+    if (installed.length > 0) {
+      const dest = installed[0].dest;
+      console.log(`\n${c.green(icon.pass)} ${aiTool}: ${installed.length} skills installed → ${dest}`);
+      for (const i of installed) console.log(`    ${i.file}`);
+      console.log(global
+        ? `\n  Installed globally — available in all projects.`
+        : `\n  Installed to workspace. Restart your AI tool to pick them up.`);
+    }
+    if (errors.length > 0) {
+      console.log(`\n${c.red(icon.fail)} Errors:`);
+      for (const e of errors) console.log(`    ${e}`);
+    }
+    if (installed.length === 0 && errors.length === 0) {
+      console.log('No skills found to install.');
+    }
   }
 };
 
@@ -1674,9 +1762,9 @@ const main = async () => {
   const positional: string[] = [];
   for (let i = 0; i < args.length; i++) {
     if (args[i].startsWith('--')) {
-      if (['--workspace', '--json', '--all', '--help', '--profile', '--since', '--brief', '--no-color'].includes(args[i])) {
+      if (['--workspace', '--json', '--all', '--help', '--profile', '--since', '--brief', '--no-color', '--ai', '--global', '--restart'].includes(args[i])) {
         // flags that take a value — skip next arg too
-        if (args[i] === '--workspace' || args[i] === '--profile' || args[i] === '--since') i++;
+        if (args[i] === '--workspace' || args[i] === '--profile' || args[i] === '--since' || args[i] === '--ai') i++;
       }
       continue;
     }
@@ -1741,6 +1829,23 @@ const main = async () => {
       const result = await discover(orgUrl, repos, parseOrgUrl(orgUrl).org);
       const outputPath = writeConfig(result.configYaml, process.cwd());
       console.log(`Config written to: ${outputPath}`);
+      break;
+    }
+
+    case 'setup-skills': {
+      const aiIdx = args.indexOf('--ai');
+      if (aiIdx < 0 || !args[aiIdx + 1]) {
+        console.error('Usage: orcha setup-skills --ai <claude|cursor> [target-dir]');
+        process.exit(1);
+      }
+      const aiTool = args[aiIdx + 1] as AiTool;
+      if (!['claude', 'cursor'].includes(aiTool)) {
+        console.error(`Unknown AI tool: ${aiTool}. Supported: claude, cursor`);
+        process.exit(1);
+      }
+      const isGlobal = args.includes('--global');
+      const targetDir = positional[1] ? path.resolve(positional[1]) : process.cwd();
+      runSetupSkills(targetDir, aiTool, isGlobal, jsonOutput);
       break;
     }
 

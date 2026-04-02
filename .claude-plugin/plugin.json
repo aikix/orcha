@@ -1,0 +1,20 @@
+{
+  "name": "orcha",
+  "version": "0.1.0",
+  "description": "Agent-first multi-repo orchestration. Gives AI coding agents structured knowledge about services, dependencies, health, and history.",
+  "author": "Aikix",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/aikix/orcha",
+  "skills": [
+    "skills/orcha-init",
+    "skills/orcha-onboard",
+    "skills/orcha-check",
+    "skills/orcha-impact",
+    "skills/orcha-debug",
+    "skills/orcha-sync",
+    "skills/orcha-pr-review",
+    "skills/orcha-weekly",
+    "skills/orcha-kb-baseline",
+    "skills/orcha-kb-update"
+  ]
+}
