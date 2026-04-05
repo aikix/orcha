@@ -10,7 +10,7 @@ permissions:
   pull-requests: write
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -24,7 +24,7 @@ jobs:
       - run: bun test apps/cli/src/format.test.ts
 
   release:
-    needs: test
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
