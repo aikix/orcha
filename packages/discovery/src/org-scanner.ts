@@ -53,16 +53,23 @@ export const listOrgRepos = async (
   const { host, org } = orgUrl;
   const isGitHubCom = host === 'github.com';
 
-  const args = [
-    'api',
-    `/orgs/${org}/repos`,
-    '--paginate',
-    ...(isGitHubCom ? [] : ['--hostname', host]),
-    '--jq',
-    '.[] | {name, description, language, archived, fork, pushed_at, default_branch, clone_url}',
-  ];
+  // Try /orgs/ first (GitHub orgs), fall back to /users/ (personal accounts)
+  let stdout: string;
+  const jqFilter = '.[] | {name, description, language, archived, fork, pushed_at, default_branch, clone_url}';
+  const hostArgs = isGitHubCom ? [] : ['--hostname', host];
 
-  const { stdout } = await execFileAsync('gh', args, { timeout: 60_000 });
+  try {
+    const result = await execFileAsync('gh', [
+      'api', `/orgs/${org}/repos`, '--paginate', ...hostArgs, '--jq', jqFilter,
+    ], { timeout: 60_000 });
+    stdout = result.stdout;
+  } catch {
+    // Not an org — try as a user account
+    const result = await execFileAsync('gh', [
+      'api', `/users/${org}/repos`, '--paginate', ...hostArgs, '--jq', jqFilter,
+    ], { timeout: 60_000 });
+    stdout = result.stdout;
+  }
 
   const repos: RepoInfo[] = stdout
     .trim()
