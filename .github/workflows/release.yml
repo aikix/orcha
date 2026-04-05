@@ -10,10 +10,10 @@ permissions:
   pull-requests: write
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.1.38"
@@ -24,14 +24,14 @@ jobs:
       - run: bun test apps/cli/src/format.test.ts
 
   release:
-    needs: test
+    needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
       - uses: oven-sh/setup-bun@v2
