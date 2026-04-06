@@ -1,3 +1,12 @@
+## [1.1.1](https://github.com/aikix/orcha/compare/v1.1.0...v1.1.1) (2026-04-06)
+
+
+### Bug Fixes
+
+* rename CI test job to build to match branch protection ([5fb7836](https://github.com/aikix/orcha/commit/5fb78362fd4a36eacdee1982bf0140c324c0bc57))
+* separate build (typecheck) and test CI jobs ([9b3ff9e](https://github.com/aikix/orcha/commit/9b3ff9e9b9db8ccbb845aea34cc13e65c8fb42df))
+* use ts-ignore instead of ts-expect-error for MCP SDK type issue ([a47b443](https://github.com/aikix/orcha/commit/a47b44301c5055064808024c0edec96439b10aa8))
+
 # [1.1.0](https://github.com/aikix/orcha/compare/v1.0.1...v1.1.0) (2026-04-06)
 
 
