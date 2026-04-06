@@ -45,9 +45,20 @@ jobs:
           bun-version: "1.1.38"
       - run: rm -f bun.lock && bun install
         timeout-minutes: 3
+      - name: Configure git for release bot
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          git config user.name "aikix-release-bot[bot]"
+          git config user.email "3289376+aikix-release-bot[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${APP_TOKEN}@github.com/aikix/orcha.git"
       - name: Run semantic-release
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GIT_AUTHOR_NAME: aikix-release-bot[bot]
+          GIT_AUTHOR_EMAIL: 3289376+aikix-release-bot[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: aikix-release-bot[bot]
+          GIT_COMMITTER_EMAIL: 3289376+aikix-release-bot[bot]@users.noreply.github.com
         run: >
           npx
           --package semantic-release@25
