@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/aikix/orcha/compare/v1.0.1...v1.1.0) (2026-04-06)
+
+
+### Features
+
+* add self-update command and startup version check ([a1bb96a](https://github.com/aikix/orcha/commit/a1bb96a3abd72809b2e0cee11a6bfcd1b6eaf652))
+
 ## [1.0.1](https://github.com/aikix/orcha/compare/v1.0.0...v1.0.1) (2026-04-06)
 
 
