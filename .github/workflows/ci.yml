@@ -16,7 +16,8 @@ jobs:
         timeout-minutes: 3
       - run: bun run typecheck
 
-  test:
+  build:
+    needs: typecheck
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
