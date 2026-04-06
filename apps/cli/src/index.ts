@@ -10,7 +10,8 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync, mkdirSync, readdirSync, copyFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, copyFileSync, readFileSync, writeFileSync, renameSync, chmodSync, unlinkSync } from 'node:fs';
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { c, icon, summaryLine, isBotCommit } from './format.js';
 import {
@@ -54,6 +55,52 @@ import {
 
 const execFileAsync = promisify(execFile);
 
+// ---------------------------------------------------------------------------
+// Version + update utilities
+// ---------------------------------------------------------------------------
+const GITHUB_REPO = 'aikix/orcha';
+const UPDATE_CHECK_FILE = path.join(homedir(), '.orcha', 'update-check.json');
+
+const getCurrentVersion = (): string => {
+  try {
+    const pkgPath = path.resolve(import.meta.dir, '..', '..', '..', 'package.json');
+    return JSON.parse(readFileSync(pkgPath, 'utf-8')).version;
+  } catch {
+    return '0.0.0';
+  }
+};
+
+const CURRENT_VERSION = getCurrentVersion();
+
+const compareVersions = (a: string, b: string): number => {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] ?? 0) > (pb[i] ?? 0)) return 1;
+    if ((pa[i] ?? 0) < (pb[i] ?? 0)) return -1;
+  }
+  return 0;
+};
+
+const fetchLatestRelease = async (): Promise<{ tag: string; version: string } | null> => {
+  try {
+    const response = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
+      { signal: AbortSignal.timeout(5000), headers: { Accept: 'application/vnd.github+json' } },
+    );
+    if (!response.ok) return null;
+    const data = (await response.json()) as { tag_name: string };
+    const version = data.tag_name.replace(/^v/, '');
+    return { tag: data.tag_name, version };
+  } catch {
+    return null;
+  }
+};
+
+const getAssetName = (): string => {
+  return `orcha-${process.platform}-${process.arch}`;
+};
+
 const printHelp = () => {
   console.log(`Usage:
   orcha [command]
@@ -95,6 +142,10 @@ Code Intelligence:
   pr context <pr-url>              Full PR context: diff, comments, reviews, files
   delta scan [--since <window>]    Scan local git commits across repos (default: 1w)
 
+Maintenance:
+  update                           Self-update to latest release from GitHub
+  version                          Show current version
+
 Flags:
   --profile <name>                 Profile for graph/up/inspect
   --all                            Include all repos (skip selection)
@@ -102,6 +153,7 @@ Flags:
   --brief                          Concise one-line summary (for agent display)
   --no-color                       Disable colored output (also: NO_COLOR env)
   --help, -h                       Show this help
+  --version, -V                    Show current version
 
 Examples:
   orcha init https://github.com/my-org              Scan org, diff against ./<org>/
@@ -1743,6 +1795,121 @@ const runInspectConfig = (serviceId: string, profile: string | undefined, jsonOu
 };
 
 // ---------------------------------------------------------------------------
+// update: Self-update from GitHub Releases
+// ---------------------------------------------------------------------------
+const runUpdate = async (jsonOutput: boolean) => {
+  // Self-update only works with compiled binaries
+  const execName = path.basename(process.execPath);
+  if (execName === 'bun' || execName === 'node') {
+    if (jsonOutput) {
+      console.log(JSON.stringify({ error: 'Self-update only works with compiled binaries. Use git pull instead.' }));
+    } else {
+      console.error('Self-update only works with compiled binaries. Use git pull && bun install instead.');
+    }
+    process.exit(1);
+  }
+
+  if (!jsonOutput) console.log(`Current version: v${CURRENT_VERSION}`);
+
+  const latest = await fetchLatestRelease();
+  if (!latest) {
+    if (jsonOutput) console.log(JSON.stringify({ error: 'Failed to check for updates' }));
+    else console.error('Failed to check for updates. Check your internet connection.');
+    process.exit(1);
+  }
+
+  if (compareVersions(latest.version, CURRENT_VERSION) <= 0) {
+    if (jsonOutput) {
+      console.log(JSON.stringify({ currentVersion: CURRENT_VERSION, latestVersion: latest.version, upToDate: true }));
+    } else {
+      console.log(`Already up to date (v${CURRENT_VERSION}).`);
+    }
+    return;
+  }
+
+  if (!jsonOutput) console.log(`Updating: v${CURRENT_VERSION} → v${latest.version}`);
+
+  const assetName = getAssetName();
+  const downloadUrl = `https://github.com/${GITHUB_REPO}/releases/download/${latest.tag}/${assetName}`;
+
+  if (!jsonOutput) process.stdout.write(`  Downloading ${assetName}...`);
+  const response = await fetch(downloadUrl, { signal: AbortSignal.timeout(120_000) });
+  if (!response.ok) {
+    if (jsonOutput) console.log(JSON.stringify({ error: `Download failed: ${response.status}`, url: downloadUrl }));
+    else console.error(` failed (HTTP ${response.status}). Asset may not exist for this platform.`);
+    process.exit(1);
+  }
+  const binary = Buffer.from(await response.arrayBuffer());
+  if (!jsonOutput) console.log(` done (${(binary.length / 1024 / 1024).toFixed(1)} MB)`);
+
+  const execPath = process.execPath;
+  const backupPath = `${execPath}.bak`;
+
+  try {
+    renameSync(execPath, backupPath);
+    writeFileSync(execPath, binary);
+    chmodSync(execPath, 0o755);
+    try { unlinkSync(backupPath); } catch { /* ok */ }
+  } catch (err) {
+    try { renameSync(backupPath, execPath); } catch { /* best effort rollback */ }
+    const msg = err instanceof Error ? err.message : String(err);
+    if (jsonOutput) console.log(JSON.stringify({ error: `Update failed: ${msg}` }));
+    else console.error(`Update failed: ${msg}`);
+    process.exit(1);
+  }
+
+  // Update check file so we don't nag right after update
+  try {
+    const dir = path.dirname(UPDATE_CHECK_FILE);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(UPDATE_CHECK_FILE, JSON.stringify({ lastCheck: Date.now(), latestVersion: latest.version }));
+  } catch { /* non-critical */ }
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({ previousVersion: CURRENT_VERSION, newVersion: latest.version, upToDate: true, binary: execPath }));
+  } else {
+    console.log(`\n${c.green(icon.pass)} Updated to v${latest.version}`);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Startup update check (non-blocking, once per 24h, output on stderr)
+// ---------------------------------------------------------------------------
+const checkForUpdateInBackground = (): void => {
+  (async () => {
+    try {
+      const oneDayMs = 24 * 60 * 60 * 1000;
+
+      if (existsSync(UPDATE_CHECK_FILE)) {
+        const data = JSON.parse(readFileSync(UPDATE_CHECK_FILE, 'utf-8'));
+        const lastCheck = data.lastCheck ?? 0;
+        if (Date.now() - lastCheck < oneDayMs) {
+          // Checked recently — show cached nudge if newer version known
+          if (data.latestVersion && compareVersions(data.latestVersion, CURRENT_VERSION) > 0) {
+            console.error(`Update available: v${CURRENT_VERSION} → v${data.latestVersion}. Run 'orcha update' to upgrade.`);
+          }
+          return;
+        }
+      }
+
+      const latest = await fetchLatestRelease();
+      if (!latest) return;
+
+      // Cache the check result
+      const dir = path.dirname(UPDATE_CHECK_FILE);
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      writeFileSync(UPDATE_CHECK_FILE, JSON.stringify({ lastCheck: Date.now(), latestVersion: latest.version }));
+
+      if (compareVersions(latest.version, CURRENT_VERSION) > 0) {
+        console.error(`Update available: v${CURRENT_VERSION} → v${latest.version}. Run 'orcha update' to upgrade.`);
+      }
+    } catch {
+      // Never interfere with normal operation
+    }
+  })();
+};
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 const main = async () => {
@@ -1753,7 +1920,17 @@ const main = async () => {
     process.exit(0);
   }
 
+  if (args.includes('--version') || args.includes('-V')) {
+    console.log(CURRENT_VERSION);
+    process.exit(0);
+  }
+
   const command = args[0];
+
+  // Non-blocking update check (skip for 'update' and 'version' commands)
+  if (command !== 'update' && command !== 'version') {
+    checkForUpdateInBackground();
+  }
   const jsonOutput = args.includes('--json');
   const briefOutput = args.includes('--brief');
   const includeAll = args.includes('--all');
@@ -2040,6 +2217,16 @@ const main = async () => {
       const subcommand = positional[1];
       if (!subcommand) { console.error('Usage: orcha list <services|presets>'); process.exit(1); }
       runList(subcommand, jsonOutput);
+      break;
+    }
+
+    case 'update': {
+      await runUpdate(jsonOutput);
+      break;
+    }
+
+    case 'version': {
+      console.log(CURRENT_VERSION);
       break;
     }
 
