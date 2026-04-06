@@ -107,7 +107,7 @@ server.resource(
 // Tools: Actions agents can take
 // ---------------------------------------------------------------------------
 
-// @ts-expect-error — MCP SDK type instantiation is excessively deep with complex zod schemas
+// @ts-ignore — MCP SDK type instantiation is excessively deep with some TS versions
 server.tool(
   'get_service_config',
   'Get the resolved configuration for a service, optionally with a specific profile applied',

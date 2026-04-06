@@ -1,0 +1,12 @@
+{
+  "name": "node-service",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "node src/index.js",
+    "start": "node src/index.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "express": "^4.18.0"
+  }
+}

@@ -4,7 +4,8 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-green?style=flat-square)](LICENSE)
 [![Agent Skills](https://img.shields.io/badge/agent%20skills-10-purple?style=flat-square)](#agent-skills-10)
 [![Languages](https://img.shields.io/badge/languages-Node.js%20%7C%20Python%20%7C%20Go-orange?style=flat-square)](#multi-language-support)
-[![CI](https://img.shields.io/github/actions/workflow/status/aikix/orcha/release.yml?style=flat-square&label=CI)](https://github.com/aikix/orcha/actions)
+[![CI](https://img.shields.io/github/actions/workflow/status/aikix/orcha/ci.yml?style=flat-square&label=CI)](https://github.com/aikix/orcha/actions)
+[![Codecov](https://img.shields.io/codecov/c/github/aikix/orcha?style=flat-square)](https://codecov.io/gh/aikix/orcha)
 [![GitHub Stars](https://img.shields.io/github/stars/aikix/orcha?style=flat-square)](https://github.com/aikix/orcha/stargazers)
 
 **Your AI agent's workspace brain.**
