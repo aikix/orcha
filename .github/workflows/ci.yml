@@ -5,7 +5,8 @@ on:
     branches: [main]
 
 jobs:
-  typecheck:
+  build:
+    name: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,8 +17,8 @@ jobs:
         timeout-minutes: 3
       - run: bun run typecheck
 
-  build:
-    needs: typecheck
+  test:
+    name: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,7 +28,7 @@ jobs:
       - run: rm -f bun.lock && bun install
         timeout-minutes: 3
 
-      # Unit tests with coverage
+      # Core package tests with coverage
       - name: Test config-loader
         run: bun test --coverage --coverage-reporter=lcov --coverage-dir=coverage/config-loader packages/config-loader/src/
 
@@ -37,14 +38,14 @@ jobs:
       - name: Test orchestrator
         run: bun test --coverage --coverage-reporter=lcov --coverage-dir=coverage/orchestrator packages/orchestrator/src/
 
-      - name: Test CLI utils + format
+      - name: Test CLI (unit)
         run: bun test --coverage --coverage-reporter=lcov --coverage-dir=coverage/cli apps/cli/src/utils.test.ts apps/cli/src/format.test.ts
 
-      # Integration tests (no coverage — subprocess tests)
-      - name: Test CLI commands (integration)
+      # CLI integration tests (no coverage — subprocess tests)
+      - name: Test CLI (integration)
         run: bun test apps/cli/src/commands.test.ts
 
-      # Merge lcov files
+      # Merge coverage reports
       - name: Merge coverage reports
         run: |
           mkdir -p coverage/merged
