@@ -1,0 +1,23 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 2%
+    patch:
+      default:
+        target: 80%
+
+ignore:
+  - "packages/mcp-server/**"
+  - "packages/service-definitions/**"
+  - "packages/orchestrator/src/index.ts"
+  - "apps/cli/src/index.ts"
+  - "scripts/**"
+  - "**/*.test.ts"
+  - "**/__fixtures__/**"
+
+comment:
+  layout: "header, diff, flags, components"
+  behavior: default
+  require_changes: true

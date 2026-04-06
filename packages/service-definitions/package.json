@@ -5,7 +5,6 @@
   "exports": "./src/index.ts",
   "scripts": {
     "build": "bun run typecheck",
-    "typecheck": "tsc --project tsconfig.json",
-    "test": "bun test src/"
+    "typecheck": "tsc --project tsconfig.json"
   }
 }
