@@ -1394,8 +1394,8 @@ const runLogs = (serviceId: string, lines: number, jsonOutput: boolean) => {
 type PrUrl = { host: string; owner: string; repo: string; number: number };
 
 const parsePrUrl = (url: string): PrUrl => {
-  // https://git.example.com/my-team/status-ui/pull/617
   // https://github.com/org/repo/pull/123
+  // https://git.example.com/team/service/pull/456
   const cleaned = url.replace(/\/+$/, '');
   const withProtocol = cleaned.startsWith('http') ? cleaned : `https://${cleaned}`;
   const parsed = new URL(withProtocol);
