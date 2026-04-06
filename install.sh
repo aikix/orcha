@@ -50,3 +50,4 @@ fi
 
 echo ""
 echo "Run 'orcha --help' to get started."
+echo "Run 'orcha update' to update to future releases."

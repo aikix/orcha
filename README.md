@@ -147,6 +147,14 @@ orcha up core --profile local       # Full local stack with infra
 | `orcha kb list [service]` | Knowledge base documents per service |
 | `orcha kb status` | KB freshness per service |
 
+### Maintenance
+| Command | What it does |
+|---|---|
+| `orcha update` | Self-update to latest release from GitHub |
+| `orcha version` | Show current version (`--version` / `-V` also works) |
+
+Orcha checks for updates once per day and prints a one-liner if a newer version is available. Run `orcha update` to upgrade.
+
 ### Agent Skills (10)
 | Skill | Purpose |
 |---|---|

@@ -109,6 +109,14 @@ The CLI and agent skills have distinct responsibilities. The CLI handles determi
 | Resolved config | `inspect config <service>` | — | Used by `/orcha-debug`. |
 | List services / presets | `list services \| presets` | — | Used by `/orcha-onboard`. |
 
+### Maintenance
+
+| Feature | CLI Command | Agent Skill | Division of Work |
+|---|---|---|---|
+| Self-update | `update` | — | Downloads latest binary from GitHub Releases. Only works with compiled binaries. |
+| Version check | `version` / `--version` / `-V` | — | Prints current version. |
+| Update nudge | (automatic) | — | Non-blocking check once per 24h on startup. Prints one-liner to stderr if newer version exists. |
+
 ### MCP Server
 
 Any MCP-compatible AI agent gets workspace context without skills:
@@ -128,7 +136,7 @@ Any MCP-compatible AI agent gets workspace context without skills:
 
 | Layer | Count | Role |
 |---|---|---|
-| CLI commands | 25 | Plumbing — scan, clone, start, stop, probe, list |
+| CLI commands | 27 | Plumbing — scan, clone, start, stop, probe, list, update |
 | Agent skills | 10 | Intelligence — analyze, decide, correlate, generate docs |
 | MCP resources | 3 | Passive context for any AI agent |
 | MCP tools | 5 | Active queries for any AI agent |
