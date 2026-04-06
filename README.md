@@ -254,21 +254,32 @@ orcha (generic framework)        Team Workspace
 ```bash
 bun install                        # Install dependencies
 bun run dev:cli -- <command>       # Run CLI in dev mode
-bun test packages/config-loader/   # Run tests (58 total across packages)
+bun run test                       # Run all 125 tests via Turborepo
+bun run typecheck                  # Typecheck all packages
 bun link                           # Install globally from source
 ```
+
+### CI Pipeline
+
+Every PR runs two required checks in parallel:
+- **build** — `bun run typecheck` (does it compile?)
+- **test** — 125 tests + coverage upload to [Codecov](https://codecov.io/gh/aikix/orcha) (does it work?)
 
 ### Commits & Releases
 
 This project uses [semantic-release](https://semantic-release.gitbook.io/) with [conventional commits](https://www.conventionalcommits.org/). Pushing to `main` automatically versions and releases.
 
 ```bash
-feat: add new command          # → minor version bump (0.1.0 → 0.2.0)
-fix: handle null port          # → patch version bump (0.1.0 → 0.1.1)
-feat!: rename config key       # → major version bump (0.1.0 → 1.0.0)
+feat: add new command          # → minor version bump (1.0.0 → 1.1.0)
+fix: handle null port          # → patch version bump (1.0.0 → 1.0.1)
+feat!: rename config key       # → major version bump (1.0.0 → 2.0.0)
 chore: update deps             # → no release
+ci: update workflow            # → no release
+test: add new tests            # → no release
 docs: fix typo                 # → no release
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide.
 
 ## Status
 
@@ -276,15 +287,16 @@ All core features are implemented and working. Orcha is ready for early adopter 
 
 | Area | Status |
 |---|---|
-| Config loading | ✅ 35+ tests |
-| Discovery (Node.js, Python, Go) | ✅ Org URL + local workspace |
+| Config loading | ✅ 35 tests |
+| Discovery (Node.js, Python, Go) | ✅ 42 tests |
+| Orchestrator | ✅ 17 tests |
 | Stack management | ✅ up/down/status/watch/doctor |
 | Verification | ✅ stack/api/flow/seed |
 | Code intelligence | ✅ PR/delta/KB |
 | MCP server | ✅ Resources + tools |
 | Agent skills | ✅ 10 skills |
-| CLI output | ✅ Colors, summaries, --brief, --json |
-| CI/CD | ✅ GitHub Actions (test + release) |
+| CLI | ✅ 31 tests |
+| CI/CD | ✅ GitHub Actions (build + test + coverage + release) |
 
 ## Support the Project
 
