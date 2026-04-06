@@ -28,7 +28,7 @@ workspace:
   name: "team-name"           # Human-readable workspace name
 
 github:                       # Optional: GitHub org for PR/delta commands
-  host: "github.com"          # or git.example.com, etc.
+  host: "github.com"          # or your GitHub Enterprise host
   org: "org-name"
 
 services: { ... }             # Service definitions (see below)
@@ -192,7 +192,7 @@ Short names for services.
 ```yaml
 aliases:
   redis: user-service-redis
-  db: legacy-admin-api-postgres
+  db: admin-api-postgres
 ```
 
 ## Defaults
