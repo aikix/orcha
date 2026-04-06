@@ -27,10 +27,16 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          persist-credentials: false
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: true
       - uses: actions/setup-node@v6
         with:
           node-version: 22
@@ -41,13 +47,15 @@ jobs:
         timeout-minutes: 3
       - name: Run semantic-release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         run: >
           npx
           --package semantic-release@25
           --package @semantic-release/commit-analyzer
           --package @semantic-release/release-notes-generator
+          --package @semantic-release/changelog
           --package @semantic-release/exec
           --package @semantic-release/npm
           --package @semantic-release/github
+          --package @semantic-release/git
           semantic-release
