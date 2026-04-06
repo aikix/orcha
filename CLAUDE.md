@@ -61,15 +61,19 @@ Monorepo using Bun workspaces + Turborepo. All packages use `bun:test` and TypeS
 
 ## Testing
 
-- Uses `bun:test` (`describe`/`test`/`expect`)
-- Config-loader has 35+ tests with fixtures in `packages/config-loader/src/__fixtures__/`
-- Discovery has 19 tests (dependency detection, config generation, org inference)
+125 tests across 4 packages using `bun:test` (`describe`/`test`/`expect`):
+- Config-loader: 35 tests with fixtures in `packages/config-loader/src/__fixtures__/`
+- Discovery: 42 tests (dependency detection, config generation, org inference, repo analysis)
+- Orchestrator: 17 tests (state management, topological sort)
+- CLI: 31 tests (pure utilities in `utils.ts`, format helpers, subprocess integration)
 - Run a single test file: `bun test packages/config-loader/src/loader.test.ts`
 - `resetConfig()` must be called between tests that load different fixture configs
+- Coverage tracked via Codecov; CI uploads lcov on every PR
 
 ## Commits & Releases
 
 Uses semantic-release with conventional commits. Commit messages determine versioning:
 - `feat:` → minor bump, `fix:` → patch bump, `feat!:` or `BREAKING CHANGE:` → major bump
-- `chore:`, `docs:`, `refactor:`, `test:` → no release
+- `chore:`, `ci:`, `docs:`, `refactor:`, `test:` → no release
+- Use `ci:` for CI/CD changes, `chore:` for build/infra — never `fix:` for non-code changes
 - Pushing to `main` triggers automatic release with compiled binaries
