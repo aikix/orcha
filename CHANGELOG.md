@@ -1,3 +1,11 @@
+## [1.0.1](https://github.com/aikix/orcha/compare/v1.0.0...v1.0.1) (2026-04-06)
+
+
+### Bug Fixes
+
+* set git remote URL with app token for semantic-release push ([09a0b18](https://github.com/aikix/orcha/commit/09a0b18fe91109c1cd1e266c312b0c8f40e92de2))
+* use GitHub App token for semantic-release to bypass branch protection ([4325078](https://github.com/aikix/orcha/commit/4325078662b752c9ea2985180d0296ce3f2a8f43))
+
 ## [1.0.1](https://github.com/aikix/orcha/compare/v1.0.0...v1.0.1) (2026-04-02)
 
 
